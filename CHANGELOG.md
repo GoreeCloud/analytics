@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — November 5, 2026 (unpublished development snapshot)
+## 0.1.2 — November 5, 2026 (published development source; not deployed)
 
 - Implement SQLite online snapshot creation, schema/integrity verification, exclusive target-file creation (0600), and non-overwriting restore-to-new-path workflows.
 - Require the offline retention CLI to create a verified pre-prune backup before applying deletions. Existing backups are never replaced.
@@ -14,7 +14,7 @@
 
 A running localhost HTTP smoke test verified authentication, registration, event ingestion, reporting and dashboard delivery.
 
-**Limitations:** Source remains a local development snapshot. Neither GitHub publication nor live deployment occurred. Real browser end-to-end, Docker runtime, offsite recovery testing, independent GC UI visual acceptance, distributed ingestion and production security review remain pending.
+**Limitations:** Source code was published to the public `GoreeCloud/analytics` repository on November 5, 2026. No live deployment occurred. Real browser end-to-end, Docker runtime, offsite recovery testing, independent GC UI visual acceptance, distributed ingestion and production security review remain pending.
 
 ## 0.1.1 — November 5, 2026 (unpublished development snapshot)
 
