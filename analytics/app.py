@@ -78,12 +78,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     limiter = SingleNodeLimiter()
     ip_limiter = SingleNodeLimiter(limit=600)
     site_limiter = SingleNodeLimiter(limit=10000)
+    ingress_limiter = SingleNodeLimiter(limit=1800)
     app = FastAPI(title="GoreeCloud Analytics", version="0.1.2", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.storage = storage
     # In-memory safeguards only: dedicated network-edge protection is required
     # before public hosting. Keeping separate buckets limits UA-rotation spam.
     app.state.ip_limiter = ip_limiter
     app.state.site_limiter = site_limiter
+    app.state.ingress_limiter = ingress_limiter
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -159,6 +161,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Do not record DNT/GPC visitors.
         if request.headers.get("dnt") == "1" or request.headers.get("sec-gpc") == "1":
             return Response(status_code=204)
+        # Apply the anonymous ingress budget before parsing or database work.
+        # Invalid requests count too; upstream edge filtering is still required.
+        ingress_now = datetime.now(timezone.utc)
+        ingress_host = request.client.host if request.client else "unknown"
+        ingress_key = anonymize(settings.hash_secret, "__ingress__", ingress_host, "", ingress_now)
+        if not ingress_limiter.check(ingress_key):
+            raise HTTPException(429, "Rate limit exceeded")
         content_length = request.headers.get("content-length")
         if content_length is not None:
             try:
