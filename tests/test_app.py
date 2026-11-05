@@ -57,6 +57,24 @@ def test_sites_domain_validation_and_collection(client):
     assert client.get(f"/api/v1/sites/{sid}/realtime", headers=auth(client)).json()["visitors"] == 1
 
 
+
+def test_funnel_separates_sessions_and_handles_interleaved_steps(client):
+    sid = site(client)
+    start = {"Origin": "https://example.com", "User-Agent": "Visitor-A"}
+    other = {"Origin": "https://example.com", "User-Agent": "Visitor-B"}
+    assert track(client, sid, type="event", name="checkout", headers=other).status_code == 202
+    assert track(client, sid, type="event", name="signup", headers=start).status_code == 202
+    endpoint = f"/api/v1/sites/{sid}/funnel?first=signup&second=checkout"
+    first = client.get(endpoint, headers=auth(client)).json()
+    assert (first["started"], first["completed"]) == (1, 0)
+    # Completing checkout in another visit must never count.
+    assert track(client, sid, type="event", name="checkout", headers=other).status_code == 202
+    assert client.get(endpoint, headers=auth(client)).json()["completed"] == 0
+    assert track(client, sid, type="event", name="checkout", headers=start).status_code == 202
+    finished = client.get(endpoint, headers=auth(client)).json()
+    assert (finished["started"], finished["completed"], finished["conversion_rate"]) == (1, 1, 100.0)
+    assert client.get(f"/api/v1/sites/{sid}/funnel?first=signup&second=checkout").status_code == 401
+
 def test_funnel_order_and_csv_export(client):
     sid = site(client)
     assert track(client, sid, type="event", name="checkout").status_code == 202
