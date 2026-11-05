@@ -1,5 +1,12 @@
 # Changelog
 
+## November 5, 2026 — Post-publication maintenance
+
+- Pin official checkout, Python setup, and Node setup GitHub Actions to verified commit SHAs; turn off checkout credential persistence and set a CI timeout.
+- Configure Dependabot to propose weekly reviewed updates for GitHub Actions, Python packages, and Docker.
+- Move two-step funnel ordering and conversion counts into SQLite so the API does not load the entire matching event history into Python memory. Add cross-session and interleaved-event regression coverage.
+- **Status:** Changes are development-source improvements, not a production deployment; external dependency upgrade PRs require separate compatibility review.
+
 ## 0.1.2 — November 5, 2026 (published development source; not deployed)
 
 - Implement SQLite online snapshot creation, schema/integrity verification, exclusive target-file creation (0600), and non-overwriting restore-to-new-path workflows.
