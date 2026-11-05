@@ -1,0 +1,23 @@
+services:
+  analytics:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      GC_ANALYTICS_ADMIN_TOKEN: ${GC_ANALYTICS_ADMIN_TOKEN:?Set a 32+ character administrator token}
+      GC_ANALYTICS_HASH_SECRET: ${GC_ANALYTICS_HASH_SECRET:?Set a distinct 32+ character HMAC secret}
+      GC_ANALYTICS_DATABASE: /data/analytics.sqlite3
+    volumes:
+      - analytics_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  analytics_data:

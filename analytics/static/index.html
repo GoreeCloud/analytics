@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="GoreeCloud Analytics — privacy-first digital intelligence." />
+  <title>GoreeCloud Analytics</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+  <script defer src="/assets/dashboard.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">◈</div><div><strong>GoreeCloud</strong><span>Analytics</span></div></div>
+      <div class="nav-heading">WORKSPACE</div>
+      <nav aria-label="Main navigation">
+        <a class="nav-item active" href="#overview" aria-current="location"><span aria-hidden="true">▦</span> Overview</a>
+        <a class="nav-item" href="#audience"><span aria-hidden="true">◎</span> Audience</a>
+        <a class="nav-item" href="#events"><span aria-hidden="true">✧</span> Events</a>
+        <a class="nav-item" href="#setup"><span aria-hidden="true">⚙</span> Tracking setup</a>
+      </nav>
+      <div class="sidebar-footer"><span class="privacy-dot" aria-hidden="true"></span> Private by design <small>v0.1.2 • Early release</small></div>
+    </aside>
+    <main id="main-content" class="main">
+      <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>Analytics</strong></div><span class="topbar-tag">SELF-HOSTED</span></header>
+      <div class="content">
+        <div class="eyebrow">INSIGHT CENTER <span>✦</span> LIVE DATA</div>
+        <div class="headline"><div><h1>See the whole picture.</h1><p>Meaningful insights. Minimal collection. Total control.</p></div><span class="edition">Private intelligence <span aria-hidden="true">↗</span></span></div>
+        <section id="auth-panel" class="auth-card" aria-label="Dashboard access">
+          <div><h2>Connect your analytics workspace</h2><p>Enter your local administrator token. It stays in this tab's memory and is never saved in your browser.</p></div>
+          <form id="auth-form"><label for="auth-token">Administrator token</label><div class="auth-controls"><input id="auth-token" type="password" autocomplete="off" placeholder="Your administrator token" required /><button type="submit" class="primary">Connect securely</button></div></form>
+        </section>
+        <section id="workspace" hidden>
+          <div class="toolbar"><div class="select-wrap"><label for="site-picker">Website</label><select id="site-picker"></select></div><div class="toolbar-right"><span id="live-chip" class="live-chip"><i></i> Connecting</span><button class="button subtle" id="refresh">↻ Refresh</button><button class="button subtle" id="logout">Disconnect</button></div></div>
+          <div id="overview" class="section-title"><div><span class="section-kicker">PERFORMANCE OVERVIEW</span><h2 id="active-site-name">Your analytics</h2></div><span id="date-info">Last 7 days</span></div>
+          <section id="audience" class="kpi-grid" aria-label="Key performance indicators">
+            <article class="kpi-card"><span class="kpi-label">Page views <span>↗</span></span><strong id="metric-pageviews">—</strong><small>Tracked page loads</small></article>
+            <article class="kpi-card"><span class="kpi-label">Visitors <span>◌</span></span><strong id="metric-visitors">—</strong><small>Daily anonymous visitors</small></article>
+            <article class="kpi-card"><span class="kpi-label">Sessions <span>↗</span></span><strong id="metric-visits">—</strong><small>30-minute inactivity windows</small></article>
+            <article class="kpi-card"><span class="kpi-label">Bounce rate <span>⌁</span></span><strong id="metric-bounce">—</strong><small>Exactly one pageview</small></article>
+          </section>
+          <div class="analytics-grid">
+            <section class="panel chart-panel"><div class="panel-heading"><div><h3>Traffic overview</h3><p>Page views for the selected website</p></div><span class="panel-badge">7 days</span></div><div id="chart" class="chart" role="img" aria-label="Traffic sparkline chart"></div><div class="chart-legend"><i></i> Page views</div></section>
+            <section class="panel live-panel"><div class="panel-heading"><div><h3>Right now</h3><p>Past five minutes</p></div><span class="glow-indicator"></span></div><div class="realtime-number" id="metric-live">—</div><div class="realtime-caption">active anonymous visitors</div><div class="live-message">Activity updates when you refresh</div></section>
+            <section class="panel"><div class="panel-heading"><div><h3>Top pages</h3><p>Where visitors spend their attention</p></div></div><div id="top-pages" class="breakdown"></div></section>
+            <section id="events" class="panel"><div class="panel-heading"><div><h3>Custom events</h3><p>Actions beyond page views</p></div></div><div id="top-events" class="breakdown"></div></section>
+          </div>
+          <section id="goals" class="panel goal-panel" aria-label="Saved conversion goals">
+            <div class="goal-intro"><h3>Conversion goals</h3><p>Measure visits that reach an exact page or event, counted once per visit.</p><div id="goal-list" class="breakdown"></div></div>
+            <form id="goal-form" class="goal-form">
+              <label for="goal-name">Goal name</label><input id="goal-name" maxlength="80" placeholder="Registrations" required />
+              <label for="goal-kind">Goal type</label><select id="goal-kind"><option value="event">Custom event</option><option value="pageview">Page view</option></select>
+              <label for="goal-target">Exact event name or page path</label><input id="goal-target" maxlength="512" placeholder="signup" required />
+              <button type="submit" class="primary">Create goal</button>
+            </form>
+          </section>
+          <section id="setup" class="panel setup-panel"><div><h3>Connect a website</h3><p>Register a domain to generate a unique tracker ID. Tracking only runs after you install the snippet yourself.</p></div><form id="site-form" class="site-form"><label for="site-name">Website name</label><input id="site-name" placeholder="My website" required maxlength="100" /><label for="site-domain">Allowed domain</label><input id="site-domain" placeholder="example.com" required /><button class="primary" type="submit">Add website</button></form><div id="snippet" class="snippet" hidden><span>Tracking snippet</span><code id="snippet-code"></code><button class="button subtle" id="copy-snippet">Copy snippet</button></div></section>
+        </section>
+        <div role="status" aria-live="polite" id="status" class="status"></div>
+        <footer>GoreeCloud Analytics · Privacy-first product intelligence · <a href="https://github.com/GoreeCloud/gc-ui" rel="noopener noreferrer">GoreeCloud UI</a> visual foundation</footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

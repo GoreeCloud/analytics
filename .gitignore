@@ -1,0 +1,19 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.db
+*.sqlite*
+*.log
+.venv/
+.env
+.env.*
+!.env.example
+coverage.xml
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Do not commit private analytics snapshots or exported data.
+private-backups/
+backups/
