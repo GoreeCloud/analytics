@@ -16,7 +16,7 @@
 - Bounded streaming event body (4 KB) and field length limits; allowlisted event names and property keys, basic value detection.
 - Registered-host equality check and collection origin matching.
 - DNT and Global Privacy Control suppression; explicit first-party opt-out preference (no stored visitor identifier).
-- Daily HMAC visitor identifiers, no IP storage; path-segment masking for likely identities.
+- Daily HMAC visitor identifiers, no IP storage; path-segment masking for likely identities, including selected repeatedly URL-encoded email addresses. Event property values with decoded email-like identifiers are rejected.
 - Layered anonymous, network-HMAC and registered-site in-memory rate limits, single-node only.
 - Prepared SQL parameters; SQL column names selectable only from a hardcoded allowlist.
 - Fresh SQLite files are created with owner-only (0600) file permissions and symbolic-link database paths are rejected. Existing database file permissions must be reviewed manually.
@@ -36,7 +36,7 @@
 - Simple path masking cannot guarantee all PII is removed. Privacy review must inspect real representative URLs, logs and properties before enabling third-party traffic.
 - SQLite has manual retention preview/pruning, a CLI-required validated pre-prune backup, and local integrity-verified backup plus restore-to-new-path tests. It lacks production restore drills, offsite backup management, schema migrations, automated retention, HA and distributed ingestion.
 - The current browser UI is not independently accessibility-audited or screenshot-accepted against full GoreeCloud UI requirements.
-- Dependency lockfile, SBOM, automated vulnerability scanning and action SHA pinning remain to be added.
+- Dependency lockfile, SBOM and automated vulnerability scanning remain to be added. GitHub Actions are pinned to verified commit SHAs, with persisted checkout credentials disabled; Dependabot opens reviewed dependency-update proposals without automatic merge.
 - Runtime browser-backend integration could not be validated in the current browser sandbox; REST API and mocked UI interactions were tested separately.
 
 ## Backup confidentiality and recovery
