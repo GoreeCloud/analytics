@@ -398,21 +398,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not first or not second or len(first) > 80 or len(second) > 80:
             raise HTTPException(422, "Provide two valid event names")
         low, high = window(start, end)
+        # Rank events within each session in SQLite instead of materializing
+        # every matching event in Python. rowid breaks ties when events share
+        # the same millisecond timestamp, preserving ingestion order.
         with storage.connect() as db:
             get_site(db, site_id)
-            rows = db.execute("SELECT session_id, name, ts FROM events WHERE site_id=? AND kind='event' "
-                              "AND name IN (?,?) AND ts>=? AND ts<? ORDER BY ts",
-                              (site_id, first, second, low, high)).fetchall()
-        seen, completed = set(), set()
-        for r in rows:
-            # Completion check precedes enrollment. When names match, a second
-            # occurrence is required; one event never counts as both steps.
-            if r["name"] == second and r["session_id"] in seen:
-                completed.add(r["session_id"])
-            if r["name"] == first:
-                seen.add(r["session_id"])
-        return {"first": first, "second": second, "started": len(seen), "completed": len(completed),
-                "conversion_rate": round(100 * len(completed) / len(seen), 1) if seen else 0}
+            counts = db.execute("""
+                WITH relevant AS (
+                    SELECT session_id, name, ts, rowid AS insertion_order
+                    FROM events
+                    WHERE site_id=? AND kind='event' AND name IN (?,?)
+                      AND ts>=? AND ts<?
+                ),
+                ordered AS (
+                    SELECT session_id, name,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY session_id ORDER BY ts, insertion_order
+                           ) AS position
+                    FROM relevant
+                ),
+                first_steps AS (
+                    SELECT session_id, MIN(position) AS position
+                    FROM ordered WHERE name=? GROUP BY session_id
+                )
+                SELECT COUNT(*) AS started,
+                       COALESCE(SUM(CASE WHEN EXISTS (
+                           SELECT 1 FROM ordered later
+                           WHERE later.session_id=first_steps.session_id
+                             AND later.name=?
+                             AND later.position>first_steps.position
+                       ) THEN 1 ELSE 0 END), 0) AS completed
+                FROM first_steps
+            """, (site_id, first, second, low, high, first, second)).fetchone()
+        started, completed = counts["started"], counts["completed"]
+        return {"first": first, "second": second, "started": started, "completed": completed,
+                "conversion_rate": round(100 * completed / started, 1) if started else 0}
 
     @app.get("/api/v1/sites/{site_id}/export.csv")
     def export(site_id: str, start: str | None = None, end: str | None = None,
