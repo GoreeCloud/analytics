@@ -165,6 +165,19 @@ def test_encoded_identifiers_and_email_property_values_are_not_saved(client):
     assert track(client, sid, type="event", name="search", extra={"query": "person@example.com"}).status_code == 400
 
 
+def test_nested_url_encoded_identifiers_are_masked_or_rejected(client):
+    sid = site(client)
+    assert track(client, sid, url="https://example.com/users/person%2540example.com").status_code == 202
+    assert track(client, sid, url="https://example.com/users/person%252540example.com").status_code == 202
+    pages = client.get(f"/api/v1/sites/{sid}/breakdown?dimension=path",
+                       headers=auth(client)).json()
+    assert pages == [{"label": "/users/:redacted", "count": 2}]
+    for value in ("person%40example.com", "person%2540example.com",
+                  "person%252540example.com"):
+        assert track(client, sid, type="event", name="search",
+                     extra={"query": value}).status_code == 400
+
+
 def test_oversized_chunked_payload_does_not_require_content_length(client):
     # The API must enforce its own incremental limit, even for streaming bodies.
     def oversized():
