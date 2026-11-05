@@ -25,13 +25,23 @@ def allowed_host(host: str, domains: list[str]) -> bool:
     return host.lower() in domains
 
 
+def decode_for_privacy(value: str) -> str:
+    """Unwrap nested URL encoding for PII checks without storing decoded values."""
+    for _ in range(6):
+        decoded = unquote(value)
+        if decoded == value:
+            break
+        value = decoded
+    return value
+
+
 def safe_path(path: str) -> str:
     """Mask likely identity-bearing path segments before storing analytics."""
     result = []
     for segment in (path or "/").split("/"):
         # Decode only to classify sensitive values: %40 must not bypass email
         # masking. Never store an undecoded sensitive identifier as a path.
-        decoded = unquote(segment)
+        decoded = decode_for_privacy(segment)
         lower = decoded.lower()
         if ("@" in decoded or len(decoded) > 32 or
             re.search(r"[0-9]{5,}", lower) or
@@ -78,9 +88,12 @@ def normalized_event(payload: dict, allowed_domains: list[str]) -> dict:
             raise HTTPException(400, "Disallowed event property key")
         if type(val) not in (str, bool, int, float) or (type(val) is float and not math.isfinite(val)) or len(str(val)) > 160:
             raise HTTPException(400, "Disallowed event property value")
-        if isinstance(val, str) and ("@" in val or
-             re.search(r"\b(?:bearer\s|sk-[A-Za-z0-9]|[0-9]{13,19}\b)", val, re.I)):
-            raise HTTPException(400, "Sensitive event property value")
+        if isinstance(val, str):
+            privacy_scan = decode_for_privacy(val)
+            if ("@" in privacy_scan or
+                re.search(r"\b(?:bearer\s|sk-[A-Za-z0-9]|[0-9]{13,19}\b)",
+                          privacy_scan, re.I)):
+                raise HTTPException(400, "Sensitive event property value")
         safe_props[key] = val
     if len(json.dumps(safe_props)) > 2048:
         raise HTTPException(400, "Event properties too large")
