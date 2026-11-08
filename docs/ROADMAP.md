@@ -36,7 +36,7 @@ The founder's 27 product sections are target requirements. The following matrix 
 
 ## Release gates before public hosting
 
-- [ ] Replace or front the single shared admin token with GoreeCloud Identity + per-org RBAC.
+- [ ] Replace or front the single shared admin token with GoreeCloud Identity + per-org RBAC. See the [Identity integration contract](IDENTITY-INTEGRATION.md) for the verified current boundary, mandatory site-to-tenant mapping and fail-closed release tests.
 - [ ] Configure secure HTTPS reverse proxy and trusted forward headers; never trust arbitrary client-supplied IP headers.
 - [ ] Validate network-level rate limiting, request body limits, capacity/load testing, storage performance.
 - [ ] Extend manual retention preview/prune into governed automated policies; implement audit logging and backup/recovery testing.
