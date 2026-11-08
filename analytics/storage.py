@@ -1,5 +1,7 @@
 """SQLite persistence for the single-node MVP; migration to Postgres is planned."""
 import sqlite3
+import json
+import secrets
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +14,13 @@ CREATE TABLE IF NOT EXISTS sites (
   name TEXT NOT NULL,
   domains TEXT NOT NULL,
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_domains (
+  site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  domain TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  verified_at TEXT,
+  PRIMARY KEY (site_id, domain)
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
@@ -74,6 +83,14 @@ class Storage:
                     os.close(fd)
         with self.connect() as db:
             db.executescript(SCHEMA)
+            # Legacy sites preserve their data, but must prove DNS control
+            # before new events can be accepted. Fail closed on upgrade.
+            for row in db.execute("SELECT id, domains FROM sites"):
+                for domain in json.loads(row["domains"]):
+                    db.execute(
+                        "INSERT OR IGNORE INTO site_domains(site_id,domain,challenge,verified_at) "
+                        "VALUES(?,?,?,NULL)",
+                        (row["id"], domain, secrets.token_urlsafe(32)))
 
     @contextmanager
     def connect(self):

@@ -26,6 +26,50 @@
     for (const site of sites) {const o = document.createElement('option');o.value = site.id;o.textContent = site.name;picker.append(o);}
     if (sites.some((s) => s.id === selected)) picker.value = selected;
   }
+  function renderVerification(site) {
+    const panel = $('verification-panel');
+    const records = $('verification-records');
+    records.replaceChildren();
+    panel.hidden = !site;
+    $('snippet').hidden = true;
+    if (!site) return;
+    let hasVerified = false;
+    for (const proof of site.verification || []) {
+      hasVerified = hasVerified || proof.verified;
+      const item = document.createElement('div'); item.className = 'verification-row';
+      const heading = document.createElement('strong');
+      heading.textContent = proof.domain + ' · ' + (proof.verified ? 'Verified' : 'Pending DNS proof');
+      item.append(heading);
+      if (!proof.verified) {
+        const name = document.createElement('code');
+        name.textContent = 'TXT name: ' + proof.record_name;
+        const value = document.createElement('code');
+        value.textContent = 'TXT value: ' + proof.record_value;
+        const verify = document.createElement('button');
+        verify.className = 'button'; verify.type = 'button'; verify.textContent = 'Check DNS TXT record';
+        verify.addEventListener('click', async () => {
+          verify.disabled = true;
+          try {
+            await api('/api/v1/sites/' + encodeURIComponent(site.id) + '/domains/verify', {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({domain: proof.domain})
+            });
+            sites = await api('/api/v1/sites');
+            renderVerification(sites.find(s => s.id === site.id));
+            status(proof.domain + ' is verified. You can now install the tracker.');
+          } catch (error) {
+            status('Domain proof not verified. Check DNS propagation. ' + error.message, true);
+          } finally { verify.disabled = false; }
+        });
+        item.append(name, value, verify);
+      }
+      records.append(item);
+    }
+    if (hasVerified) {
+      $('snippet-code').textContent = '<script defer src="' + location.origin + '/assets/tracker.js" data-site-id="' + site.id + '"></script>';
+      $('snippet').hidden = false;
+    }
+  }
   function table(target, rows) {
     const root = $(target); root.replaceChildren();
     if (!rows.length) {const p = document.createElement('p');p.className='empty';p.textContent=target === 'goal-list' ? 'No conversion goals saved yet. Use the form to add one.' : 'No activity yet. Connect your tracking snippet to start collecting privacy-friendly insights.';root.append(p);return;}
@@ -53,6 +97,7 @@
   }
   async function refresh() {
     const site = sites.find(s => s.id === $('site-picker').value);
+    renderVerification(site);
     if (!site) { $('active-site-name').textContent='Create your first website'; ['metric-pageviews','metric-visitors','metric-visits','metric-bounce','metric-live'].forEach(id => $(id).textContent='—');table('top-pages',[]);table('top-events',[]);table('goal-list',[]);chart([]);status('Add a website below to start tracking.');return; }
     $('active-site-name').textContent = site.name;
     status('Loading fresh analytics…');
@@ -77,9 +122,8 @@
     try {
       const response=await api('/api/v1/sites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('site-name').value,domains:[$('site-domain').value]})});
       sites=await api('/api/v1/sites');setSites();$('site-picker').value=response.id;
-      const snippet=`<script defer src="${location.origin}/assets/tracker.js" data-site-id="${response.id}"></script>`;
-      $('snippet-code').textContent=snippet;$('snippet').hidden=false;
-      $('site-form').reset();await refresh();status('Website registered. Install the snippet to begin collection.');
+      $('site-form').reset();await refresh();
+      status('Website registered as pending. Add its DNS TXT challenge and verify ownership before tracking.');
     }catch(error){status(error.message,true);}
   }
   async function createGoal(e) {

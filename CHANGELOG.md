@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — DNS ownership proof (source development)
+
+- Added per-host pending DNS TXT challenge verification, bounded resolver calls, per-domain retry limits, and fail-closed collection until proof.
+- Existing site registrations and event history are preserved; previously registered hostnames must be reverified before new ingestion. **This intentionally changes earlier behavior.** Back up SQLite before upgrading.
+- Added browser setup guidance and automated DNS fake-based verification, migration and authorization checks. No live DNS or production deploy is claimed.
+- DNS proof is not authentication of visitor events, permission enforcement across teams, ongoing ownership monitoring, or a production clearance.
+
+
 ## November 5, 2026 — Post-publication maintenance
 
 - Pin official checkout, Python setup, and Node setup GitHub Actions to verified commit SHAs; turn off checkout credential persistence and set a CI timeout.

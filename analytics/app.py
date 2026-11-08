@@ -14,7 +14,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Callable
 from threading import Lock
 from urllib.parse import urlparse
 
@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from .config import Settings
 from .privacy import EVENT_RE, anonymize, normalize_domain, normalized_event, safe_path
 from .storage import Storage
+from .verification import DNSLookupUnavailable, read_txt_records, txt_record_name, txt_record_value
 
 STATIC = Path(__file__).parent / "static"
 
@@ -46,6 +47,10 @@ def iso(value: datetime) -> str:
 class SiteCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     domains: list[str] = Field(min_length=1, max_length=20)
+
+
+class DomainVerify(BaseModel):
+    domain: str = Field(min_length=3, max_length=253)
 
 
 class GoalCreate(BaseModel):
@@ -72,13 +77,14 @@ class SingleNodeLimiter:
             return count <= self.limit
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], list[str]] | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     storage = Storage(settings.database)
     limiter = SingleNodeLimiter()
     ip_limiter = SingleNodeLimiter(limit=600)
     site_limiter = SingleNodeLimiter(limit=10000)
     ingress_limiter = SingleNodeLimiter(limit=1800)
+    dns_limiter = SingleNodeLimiter(limit=6)
     app = FastAPI(title="GoreeCloud Analytics", version="0.1.2", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.storage = storage
     # In-memory safeguards only: dedicated network-edge protection is required
@@ -86,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.ip_limiter = ip_limiter
     app.state.site_limiter = site_limiter
     app.state.ingress_limiter = ingress_limiter
+    app.state.dns_limiter = dns_limiter
+    app.state.txt_lookup = txt_lookup or read_txt_records
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -128,12 +136,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         media = "text/javascript" if name.endswith(".js") else "text/css"
         return FileResponse(STATIC / name, media_type=media)
 
+    def domain_status(db, site_id: str):
+        return [{"domain": item["domain"], "verified": item["verified_at"] is not None,
+                 "verified_at": item["verified_at"],
+                 "record_name": txt_record_name(item["domain"]),
+                 "record_value": txt_record_value(item["challenge"]) if item["verified_at"] is None else None}
+                for item in db.execute("SELECT domain, challenge, verified_at FROM site_domains "
+                                       "WHERE site_id=? ORDER BY domain", (site_id,))]
+
     @app.get("/api/v1/sites")
     def sites(authorization: str | None = Header(default=None)):
         admin(authorization)
         with storage.connect() as db:
             return [{"id": s["id"], "name": s["name"], "domains": json.loads(s["domains"]),
-                     "created_at": s["created_at"]} for s in db.execute("SELECT * FROM sites ORDER BY name")]
+                     "created_at": s["created_at"], "verification": domain_status(db, s["id"])}
+                    for s in db.execute("SELECT * FROM sites ORDER BY name")]
 
     @app.post("/api/v1/sites", status_code=201)
     def new_site(payload: SiteCreate, authorization: str | None = Header(default=None)):
@@ -142,6 +159,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             domains = sorted({normalize_domain(x) for x in payload.domains})
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if any(len(domain) + len(txt_record_name("")) > 253 for domain in domains):
+            raise HTTPException(422, "Domain too long for DNS ownership challenge")
         normalized_name = payload.name.strip()
         if not normalized_name:
             raise HTTPException(422, "Website name cannot be blank")
@@ -149,7 +168,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with storage.connect() as db:
             db.execute("INSERT INTO sites(id,name,domains,created_at) VALUES(?,?,?,?)",
                        (site_id, normalized_name, json.dumps(domains), iso(datetime.now(timezone.utc))))
-        return {"id": site_id, "name": normalized_name, "domains": domains}
+            for domain in domains:
+                db.execute("INSERT INTO site_domains(site_id,domain,challenge,verified_at) VALUES(?,?,?,NULL)",
+                           (site_id, domain, secrets.token_urlsafe(32)))
+            verification = domain_status(db, site_id)
+        return {"id": site_id, "name": normalized_name, "domains": domains,
+                "verification": verification}
+
+    @app.post("/api/v1/sites/{site_id}/domains/verify")
+    def verify_domain(site_id: str, payload: DomainVerify,
+                      authorization: str | None = Header(default=None)):
+        """Require owner-controlled DNS TXT proof; never trust event Origin as proof."""
+        admin(authorization)
+        try:
+            domain = normalize_domain(payload.domain)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        with storage.connect() as db:
+            get_site(db, site_id)
+            item = db.execute("SELECT challenge, verified_at FROM site_domains "
+                              "WHERE site_id=? AND domain=?", (site_id, domain)).fetchone()
+            if item is None:
+                raise HTTPException(404, "Unknown registered domain")
+            if item["verified_at"] is not None:
+                return {"domain": domain, "verified": True}
+            expected = txt_record_value(item["challenge"])
+        if not dns_limiter.check(f"{site_id}|{domain}"):
+            raise HTTPException(429, "Retry DNS verification after one minute")
+        try:
+            values = app.state.txt_lookup(txt_record_name(domain))
+        except DNSLookupUnavailable as exc:
+            raise HTTPException(503, "DNS resolver unavailable; retry later") from exc
+        if not any(isinstance(x, str) and hmac.compare_digest(x, expected) for x in values):
+            raise HTTPException(409, "DNS TXT challenge not found")
+        with storage.connect() as db:
+            updated = db.execute("UPDATE site_domains SET verified_at=?, challenge='' "
+                                 "WHERE site_id=? AND domain=? AND challenge=? AND verified_at IS NULL",
+                                 (iso(datetime.now(timezone.utc)), site_id, domain,
+                                  item["challenge"]))
+            if updated.rowcount == 0:
+                raise HTTPException(409, "Verification challenge changed; reload and retry")
+        return {"domain": domain, "verified": True}
 
     @app.options("/api/v1/collect")
     def collect_preflight(request: Request):
@@ -201,6 +260,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with storage.connect() as db:
             site = get_site(db, site_id)
             normalized = normalized_event(payload, json.loads(site["domains"]))
+            proved = db.execute("SELECT 1 FROM site_domains WHERE site_id=? AND domain=? "
+                                "AND verified_at IS NOT NULL",
+                                (site_id, normalized["hostname"])).fetchone()
+            if proved is None:
+                raise HTTPException(403, "Domain ownership is not verified")
             origin = request.headers.get("origin")
             if origin:
                 try:

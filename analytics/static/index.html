@@ -55,7 +55,11 @@
               <button type="submit" class="primary">Create goal</button>
             </form>
           </section>
-          <section id="setup" class="panel setup-panel"><div><h3>Connect a website</h3><p>Register a domain to generate a unique tracker ID. Tracking only runs after you install the snippet yourself.</p></div><form id="site-form" class="site-form"><label for="site-name">Website name</label><input id="site-name" placeholder="My website" required maxlength="100" /><label for="site-domain">Allowed domain</label><input id="site-domain" placeholder="example.com" required /><button class="primary" type="submit">Add website</button></form><div id="snippet" class="snippet" hidden><span>Tracking snippet</span><code id="snippet-code"></code><button class="button subtle" id="copy-snippet">Copy snippet</button></div></section>
+          <section id="setup" class="panel setup-panel"><div><h3>Connect a website</h3><p>Register your domain, then prove DNS ownership. Collection stays disabled until your TXT verification succeeds and you install the tracker.</p></div><form id="site-form" class="site-form"><label for="site-name">Website name</label><input id="site-name" placeholder="My website" required maxlength="100" /><label for="site-domain">Allowed domain</label><input id="site-domain" placeholder="example.com" required /><button class="primary" type="submit">Add website</button></form><div id="snippet" class="snippet" hidden><span>Tracking snippet</span><code id="snippet-code"></code><button class="button subtle" id="copy-snippet">Copy snippet</button></div></section>
+          <section id="verification-panel" class="panel verification-panel" aria-label="Website ownership verification" hidden>
+            <div class="panel-heading"><div><h3>Verify domain ownership</h3><p>Publish the TXT record with your DNS provider. Only verified domains can send analytics events.</p></div></div>
+            <div id="verification-records" class="verification-records"></div>
+          </section>
         </section>
         <div role="status" aria-live="polite" id="status" class="status"></div>
         <footer>GoreeCloud Analytics · Privacy-first product intelligence · <a href="https://github.com/GoreeCloud/gc-ui" rel="noopener noreferrer">GoreeCloud UI</a> visual foundation</footer>

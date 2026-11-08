@@ -32,9 +32,23 @@ docker compose up --build -d
 
 The Compose configuration binds only `127.0.0.1:8000`, uses a persistent data volume and a non-root container, and is still **not approved for public exposure**. If your container engine does not propagate a writable owned volume, adjust its volume ownership before starting rather than running the service as root. Do not publish the administrator endpoint until the release gates are satisfied.
 
-### Register a website
+### Register and verify a website
 
-In the dashboard select **Add website** and provide its FQDN (for example `example.com`). Install the generated snippet immediately before the closing `</head>` element on that site. The tracker uses no cookies, honors DNT/GPC, sends sanitized pageview and custom event data, and exposes:
+Register a website using **Add website** and its FQDN (for example `example.com`). New registrations remain **pending**, and public collection is rejected until the administrator proves DNS control for each hostname. In your DNS provider, publish the TXT record shown in the dashboard:
+
+```text
+Name:  _goreecloud-analytics.example.com
+Type:  TXT
+Value: goreecloud-analytics-verification=<unique challenge from the dashboard>
+```
+
+After DNS propagation, select **Check DNS TXT record**. The server performs a bounded TXT lookup through its configured recursive resolver. Verification is per exact hostname; verifying the apex does not verify subdomains. The dashboard reveals the tracker snippet only after a matching domain has been verified. Install it immediately before the closing `</head>` element of each verified site.
+
+Administrators may also use authenticated `GET /api/v1/sites` for pending TXT records and `POST /api/v1/sites/{site_id}/domains/verify` with JSON body `{"domain":"example.com"}`. DNS checks are limited to six attempts per minute per domain on this node. DNS proof is **not** authentication of individual tracking requests.
+
+**Important existing-database upgrade:** Create and verify a consistent SQLite backup before deploying this schema. Historical site records and event rows remain intact, but existing registered domains start **unverified**, so new collection will pause until TXT verification is completed. Plan that interruption explicitly. Schema migrations and rollback are not yet fully versioned, and no production migration has been tested.
+
+These checks do not replace GoreeCloud Identity access policies, privacy consent, IP/network controls, periodic proof revalidation, or external DNS trust analysis. The tracker uses no cookies, honors DNT/GPC, sends sanitized pageview and custom event data, and exposes:
 
 ```js
 window.goreecloudAnalytics.track('signup', {plan: 'free'});
@@ -52,7 +66,7 @@ After registering a site, use the dashboard's **Conversion goals** form to creat
 curl -H "Authorization: Bearer $GC_ANALYTICS_ADMIN_TOKEN" http://127.0.0.1:8000/api/v1/sites
 ```
 
-`GET /healthz` is unauthenticated. Administrative APIs require an exact Bearer token. Anonymous collection is via `POST /api/v1/collect` and registered domains. The raw IP is used only in memory to derive a daily HMAC identifier; IP is not saved. Registered domains are exact-match, and the cross-site origin must match the event URL host.
+`GET /healthz` is unauthenticated. Administrative APIs require an exact Bearer token. Anonymous collection is via `POST /api/v1/collect` and registered domains. The raw IP is used only in memory to derive a daily HMAC identifier; IP is not saved. Registered and DNS-verified domains are exact-match. The cross-site origin must match the event URL host when present; this origin signal does not prevent forged non-browser events.
 
 ## Architecture and privacy boundaries
 
