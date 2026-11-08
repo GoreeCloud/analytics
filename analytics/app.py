@@ -210,6 +210,28 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
                 raise HTTPException(409, "Verification challenge changed; reload and retry")
         return {"domain": domain, "verified": True}
 
+    @app.post("/api/v1/sites/{site_id}/domains/revoke")
+    def revoke_domain(site_id: str, payload: DomainVerify,
+                      authorization: str | None = Header(default=None)):
+        """Stop intake for one hostname and rotate its DNS ownership challenge."""
+        admin(authorization)
+        try:
+            domain = normalize_domain(payload.domain)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        with storage.connect() as db:
+            get_site(db, site_id)
+            exists = db.execute("SELECT 1 FROM site_domains WHERE site_id=? AND domain=?",
+                                (site_id, domain)).fetchone()
+            if exists is None:
+                raise HTTPException(404, "Unknown registered domain")
+            challenge = secrets.token_urlsafe(32)
+            db.execute("UPDATE site_domains SET verified_at=NULL, challenge=? WHERE site_id=? AND domain=?",
+                       (challenge, site_id, domain))
+        return {"domain": domain, "verified": False,
+                "record_name": txt_record_name(domain),
+                "record_value": txt_record_value(challenge)}
+
     @app.options("/api/v1/collect")
     def collect_preflight(request: Request):
         # Collection uses text/plain to avoid preflights. Do not reflect arbitrary CORS origins.

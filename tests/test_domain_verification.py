@@ -118,3 +118,27 @@ def test_txt_multisegment_answers_without_network(monkeypatch):
     monkeypatch.setattr(dns.resolver,"Resolver",FakeResolver)
     assert read_txt_records("_goreecloud-analytics.example.com") == ["verification=value"]
     assert calls == [("_goreecloud-analytics.example.com.","TXT",False,1.0,3.0)]
+
+
+def test_admin_revoke_rotates_dns_challenge_and_preserves_history(client):
+    site = register(client)
+    first = site["verification"][0]
+    url = f'/api/v1/sites/{site["id"]}/domains'
+    client.app.state.txt_lookup = lambda _: [first["record_value"]]
+    assert client.post(url + "/verify", headers=auth(), json={"domain":"example.com"}).status_code == 200
+    assert visit(client, site["id"]).status_code == 202
+    assert client.post(url + "/revoke", json={"domain":"example.com"}).status_code == 401
+    assert client.post(url + "/revoke", headers=auth(), json={"domain":"other.example.com"}).status_code == 404
+    result = client.post(url + "/revoke", headers=auth(), json={"domain":"example.com"})
+    assert result.status_code == 200
+    new_proof = result.json()
+    assert new_proof["verified"] is False
+    assert new_proof["record_name"] == first["record_name"]
+    assert new_proof["record_value"] != first["record_value"]
+    assert visit(client, site["id"]).status_code == 403
+    report = client.get(f'/api/v1/sites/{site["id"]}/summary', headers=auth()).json()
+    assert report["pageviews"] == 1
+    assert client.post(url + "/verify", headers=auth(), json={"domain":"example.com"}).status_code == 409
+    client.app.state.txt_lookup = lambda _: [new_proof["record_value"]]
+    assert client.post(url + "/verify", headers=auth(), json={"domain":"example.com"}).status_code == 200
+    assert visit(client, site["id"]).status_code == 202

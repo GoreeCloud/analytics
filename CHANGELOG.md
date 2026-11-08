@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased — DNS ownership proof (source development)
+## Unreleased — DNS ownership proof and revocation (source development)
 
 - Added per-host pending DNS TXT challenge verification, bounded resolver calls, per-domain retry limits, and fail-closed collection until proof.
 - Existing site registrations and event history are preserved; previously registered hostnames must be reverified before new ingestion. **This intentionally changes earlier behavior.** Back up SQLite before upgrading.
 - Added browser setup guidance and automated DNS fake-based verification, migration and authorization checks. No live DNS or production deploy is claimed.
 - DNS proof is not authentication of visitor events, permission enforcement across teams, ongoing ownership monitoring, or a production clearance.
+- Added authenticated per-host proof revocation with new random challenges, immediate intake denial, and regression coverage preserving historical events.
 
 
 ## November 5, 2026 — Post-publication maintenance

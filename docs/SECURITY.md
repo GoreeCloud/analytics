@@ -27,6 +27,8 @@
 - Non-root Docker image, dropped container capabilities, read-only root filesystem in Compose.
 - Automated request/authorization/privacy regression tests.
 
+- An authenticated per-host manual revocation API can stop new collection and rotate one DNS TXT challenge without deleting historical analytics events. It has no dashboard control and is not automatic ownership-transfer detection.
+
 ## Known open risks and release blockers
 
 - Caller can forge `Origin`, URL, user agent, and public site ID. DNS TXT proof confirms control of one DNS record at verification time, not visitor authenticity, legal ownership or durable control. Resolver cache/trust, DNS poisoning, future domain transfers and the absence of periodic proof checks remain open risks. Collection should not be used for security-sensitive billing/audit claims.
