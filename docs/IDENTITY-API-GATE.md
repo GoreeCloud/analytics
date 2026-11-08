@@ -10,7 +10,7 @@
 - With a trusted `VerifiedPrincipal(tenant_id, subject_id)`, exact v2 site-owner/subject/action records are checked. A valid signature, signed tenant claim or site ID alone never grants access.
 - Site listing filters exact `analytics:read` memberships. Site reports and goal reading require `analytics:read`; CSV export needs `analytics:export`; goal creation needs `analytics:manage`; domain verify/revoke needs `analytics:admin`.
 - Unowned, unauthorized and unknown sites are indistinguishable (404). The legacy admin secret cannot bypass Identity mode. Malformed tokens, principal objects or verifier errors return generic 401.
-- Creating new sites in Identity mode is deliberately denied until a reviewed onboarding/tenant-binding procedure exists. Site deletion and ownership assignment remain offline/backup-gated; anonymous public collection remains separate and DNS-gated.
+- Creating new sites in Identity mode is deliberately denied until a reviewed onboarding/tenant-binding procedure exists. Site deletion, ownership assignment and [permission revocation](PERMISSION-REVOCATION.md) remain offline/backup-gated; anonymous public collection remains separate and DNS-gated.
 
 ## Test and deployment limits
 

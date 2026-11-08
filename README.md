@@ -6,6 +6,10 @@ GoreeCloud Analytics is an original, small analytics service for the GoreeCloud 
 
 > **Maturity:** early development. Not production-ready or deployed. Session replay, heatmaps, ecommerce integrations, federated SSO, advanced funnels/cohorts, MCP, AI, multi-tenancy, distributed ingestion, and PostgreSQL are **not yet implemented**.
 
+## Offline subject-permission revocation (development only)
+
+A preview-first [permission-revocation command](docs/PERMISSION-REVOCATION.md) can remove **one** existing SQLite v2 site/tenant/subject/action grant after exact four-part confirmation, a verified exclusive backup, and a transaction check. This does **not** revoke signed OAuth tokens, browser sessions or the legacy shared admin secret; no live database was changed.
+
 ## Identity-mode authorization (development seam only)
 
 The existing shared admin token remains **legacy private-development access**, not production authentication. An optional identity authorization mode is now available only when the trusted host injects a separately reviewed signed-access-token verifier. The default app factory has **no verifier**; setting `GC_ANALYTICS_AUTH_MODE=identity` alone fails startup rather than enabling unsafe access. This mode checks exact v2 site/tenant/subject/action permission rows, filters site lists, and rejects the legacy admin token. **No live JWT verifier, browser login, production SSO or public rollout is established.** See [Identity API Gate](docs/IDENTITY-API-GATE.md).
