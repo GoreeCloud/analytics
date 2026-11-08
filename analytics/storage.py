@@ -89,6 +89,23 @@ class Storage:
                         "restrict it to owner-only permissions (chmod 600) "
                         "after reviewing file ownership and backups"
                     )
+            # WAL / shared-memory / rollback-journal siblings can also carry
+            # analytics data. Treat unexpected symlinks, special files and
+            # permissive existing sidecars as startup blockers before SQLite
+            # opens the database; this is not continuous FS monitoring.
+            for suffix in ("-wal", "-shm", "-journal"):
+                sibling = Path(str(target) + suffix)
+                if sibling.is_symlink():
+                    raise ValueError("SQLite sidecar cannot be a symbolic link")
+                if sibling.exists():
+                    sidecar_mode = sibling.lstat().st_mode
+                    if not stat.S_ISREG(sidecar_mode):
+                        raise ValueError("SQLite sidecar must be a regular file")
+                    if os.name == "posix" and stat.S_IMODE(sidecar_mode) & 0o077:
+                        raise PermissionError(
+                            "Existing SQLite sidecar is accessible to group/others; "
+                            "stop writers and review owner-only file permissions"
+                        )
             if not target.exists():
                 try:
                     fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)

@@ -9,7 +9,7 @@ New database files are created with `0600` permissions. On POSIX systems, the ap
 ## Safe remediation for a stopped development installation
 
 1. Stop any writer, take and independently verify an authorized backup, and confirm the precise file path and expected owner.
-2. Inspect permissions: `stat -c '%a %U %n' /path/to/analytics.sqlite3` on Linux. Review access to backups, `-wal` and `-shm` sibling files, parent directories, and network shares separately.
+2. Inspect permissions: `stat -c '%a %U %n' /path/to/analytics.sqlite3` on Linux. On startup, existing `-wal`, `-shm` and `-journal` sidecars are also checked for regular-file type, symlinks and group/other POSIX access. Review ownership and permissions of every legitimate sidecar while writers are stopped; do **not** remove live WAL files to bypass a safety gate. Parent directories, backups and network shares still need separate checks.
 3. For a file that you own and have verified, apply `chmod 600 /path/to/analytics.sqlite3`. Do **not** recursively chmod unrelated data, replace ownership blindly, or delete the database.
 4. Re-run read-only `python -m analytics.schema_audit --database /path/to/analytics.sqlite3` on a safe snapshot and start Analytics only when compatible. Existing versioned schema requirements still apply.
 
