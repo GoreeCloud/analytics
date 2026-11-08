@@ -135,3 +135,27 @@ def test_mode_env_fails_closed_for_unknown_value(monkeypatch):
     monkeypatch.setenv('GC_ANALYTICS_AUTH_MODE','invalid')
     with pytest.raises(RuntimeError,match='GC_ANALYTICS_AUTH_MODE'):
         Settings.from_env()
+
+
+def test_pending_dns_challenges_are_admin_only_even_with_read_permission(api):
+    client, settings = api
+    with sqlite3.connect(settings.database) as db:
+        db.execute("UPDATE site_domains SET verified_at=NULL, challenge=? "
+                   "WHERE site_id=?", ("not-a-public-challenge", "alpha"))
+        db.execute("INSERT INTO site_permissions(site_id,subject_id,permission,granted_at) "
+                   "VALUES(?,?,?,?)", ("alpha", "charlie", "analytics:read", "2026-11-08"))
+    # Reader can observe a pending hostname, but cannot fetch its verification secret.
+    listed = client.get('/api/v1/sites', headers=headers('alice'))
+    assert listed.status_code == 200
+    proof = listed.json()[0]['verification'][0]
+    assert proof['domain'] == 'alpha.example.com'
+    assert proof['verified'] is False and proof['record_name']
+    assert proof['record_value'] is None
+    assert 'not-a-public-challenge' not in listed.text
+    # An explicit site admin plus read grant can still complete DNS onboarding.
+    privileged = client.get('/api/v1/sites', headers=headers('charlie'))
+    assert privileged.status_code == 200
+    admin_proof = privileged.json()[0]['verification'][0]
+    assert admin_proof['record_value'] == 'goreecloud-analytics-verification=not-a-public-challenge'
+    # Export-only principals cannot list a site or any TXT secret.
+    assert client.get('/api/v1/sites', headers=headers('bob')).json() == []
