@@ -19,3 +19,8 @@ Local regression tests exercise the route permissions against **synthetic in-pro
 Before any deployment, resolve [Identity licensing/packaging issue #17](https://github.com/GoreeCloud/identity/issues/17), import a reviewed pinned-issuer Identity resource adapter, validate real disposable signed-token/OIDC flows, independently verify tenant/site bindings and revocation, implement session/CSRF protection, and pass security/network/recovery/browser acceptance gates. This integration seam cannot be represented as operational SSO.
 
 See [Identity integration requirements](IDENTITY-INTEGRATION.md) and [Security model](SECURITY.md).
+
+
+## DNS TXT challenge confidentiality
+
+In Identity mode, `GET /api/v1/sites` returns site and verification **status** only to principals with explicit `analytics:read` rights. Pending `record_value` DNS ownership secrets are suppressed (`null`) unless the same authenticated principal also holds `analytics:admin` for that exact site and independently persisted tenant. Legacy local development mode retains its shared administrator-only response. Unknown or unassigned sites remain hidden. This limits read-only dashboard and analytics users' visibility into control-plane challenges; it does not replace DNS control, credential protection, or a separately vetted signed-token verifier.

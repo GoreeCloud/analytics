@@ -197,9 +197,21 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
                     "WHERE o.tenant_id=? AND p.subject_id=? "
                     "AND p.permission='analytics:read' ORDER BY s.name",
                     (principal.tenant_id, principal.subject_id))
-            return [{"id": s["id"], "name": s["name"], "domains": json.loads(s["domains"]),
-                     "created_at": s["created_at"], "verification": domain_status(db, s["id"])}
-                    for s in rows]
+            result = []
+            for site in rows:
+                proofs = domain_status(db, site["id"])
+                if principal is not None and not has_site_permission(
+                    db, site_id=site["id"], trusted_tenant_id=principal.tenant_id,
+                    trusted_subject_id=principal.subject_id, permission="analytics:admin"
+                ):
+                    # A read grant permits site status, never pending DNS secrets.
+                    # The verified/pending state is useful for reports, but TXT
+                    # challenges are administrator-only control-plane material.
+                    proofs = [{**item, "record_value": None} for item in proofs]
+                result.append({"id": site["id"], "name": site["name"],
+                               "domains": json.loads(site["domains"]),
+                               "created_at": site["created_at"], "verification": proofs})
+            return result
 
     @app.post("/api/v1/sites", status_code=201)
     def new_site(payload: SiteCreate, authorization: str | None = Header(default=None)):
