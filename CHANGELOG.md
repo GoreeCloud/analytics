@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — SQLite v2 independent site ownership foundation
+
+- Added empty operator-owned `site_owners` and subject/action `site_permissions`
+  tables with fail-closed structural audits. No site is claimed by an arbitrary
+  login, DNS owner, shared admin token or unverified tenant claim.
+- Recognized v0/v1 files require a manual, exclusive-backup-gated atomic
+  migration to v2; unrelated sites, historical traffic and existing DNS proof
+  are preserved. Unknown, partial and future schemas are rejected.
+- Included new ownership/membership rows in offline site-purge counts and
+  cascade verification. This **does not** implement Identity authentication,
+  production tenant authorization or live user/team RBAC.
+
 ## Unreleased — backup-gated site deletion
 
 - Add manual, exact-confirmation, verified-backup-gated SQLite site deletion with read-only preview, transactionally isolated multi-site records, and schema integrity checks.

@@ -5,10 +5,11 @@ import stat
 from contextlib import contextmanager
 from pathlib import Path
 
-from .schema_audit import REQUIRED_COLUMNS, inspect_constraints
+from .schema_audit import REQUIRED_COLUMNS, OWNERSHIP_COLUMNS, inspect_constraints
 
-SCHEMA_VERSION = 1
-EXPECTED_TABLES = frozenset({"sites", "site_domains", "sessions", "events", "goals"})
+SCHEMA_VERSION = 2
+EXPECTED_TABLES = frozenset({"sites", "site_domains", "sessions", "events", "goals",
+                             "site_owners", "site_permissions"})
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -64,6 +65,22 @@ CREATE TABLE IF NOT EXISTS goals (
   UNIQUE(site_id, name)
 );
 CREATE INDEX IF NOT EXISTS ix_goals_site ON goals(site_id);
+CREATE TABLE IF NOT EXISTS site_owners (
+  site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL CHECK(length(tenant_id) BETWEEN 1 AND 128),
+  assigned_at TEXT NOT NULL,
+  assigned_by TEXT NOT NULL CHECK(assigned_by='offline-operator')
+);
+CREATE INDEX IF NOT EXISTS ix_site_owners_tenant ON site_owners(tenant_id,site_id);
+CREATE TABLE IF NOT EXISTS site_permissions (
+  site_id TEXT NOT NULL REFERENCES site_owners(site_id) ON DELETE CASCADE,
+  subject_id TEXT NOT NULL CHECK(length(subject_id) BETWEEN 1 AND 255),
+  permission TEXT NOT NULL CHECK(permission IN
+    ('analytics:read','analytics:export','analytics:manage','analytics:admin','analytics:delete')),
+  granted_at TEXT NOT NULL,
+  PRIMARY KEY(site_id,subject_id,permission)
+);
+CREATE INDEX IF NOT EXISTS ix_site_permissions_subject ON site_permissions(subject_id,site_id);
 """
 
 
@@ -124,7 +141,7 @@ class Storage:
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             valid = version == SCHEMA_VERSION and EXPECTED_TABLES.issubset(tables)
             if valid:
-                for table, required in REQUIRED_COLUMNS.items():
+                for table, required in {**REQUIRED_COLUMNS, **OWNERSHIP_COLUMNS}.items():
                     columns = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
                     if not required.issubset(columns):
                         valid = False

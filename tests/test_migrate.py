@@ -1,4 +1,4 @@
-"""Explicit SQLite v0->v1 upgrade, backup, preservation and fail-closed tests."""
+"""Explicit SQLite v0/v1->v2 upgrade, backup, preservation and fail-closed tests."""
 import json
 import sqlite3
 from pathlib import Path
@@ -15,6 +15,8 @@ from analytics.storage import Storage
 def legacy(path, domain='example.com'):
     Storage(str(path))
     with sqlite3.connect(path) as db:
+        db.execute('DROP TABLE site_permissions')
+        db.execute('DROP TABLE site_owners')
         db.execute('DROP TABLE site_domains')
         db.execute('PRAGMA user_version=0')
         db.execute('INSERT INTO sites VALUES (?, ?, ?, ?)',
@@ -43,7 +45,7 @@ def test_known_legacy_data_is_preserved_and_proof_pending(tmp_path):
     backup = tmp_path/'backup.sqlite3'
     result = apply_migration(path, backup)
     assert result['mode'] == 'applied'
-    assert result['user_version'] == 1
+    assert result['user_version'] == 2
     assert verify_backup(backup)['events'] == 1
     assert inspect_schema(backup)['status'] == 'migration-required'
     assert inspect_schema(path)['status'] == 'ready'
@@ -60,6 +62,8 @@ def test_unversioned_but_domain_complete_adopts_without_resetting_proof(tmp_path
     path=tmp_path/'unversioned.sqlite3'
     Storage(str(path))
     with sqlite3.connect(path) as db:
+        db.execute('DROP TABLE site_permissions')
+        db.execute('DROP TABLE site_owners')
         db.execute('PRAGMA user_version=0')
         db.execute('INSERT INTO sites VALUES (?, ?, ?, ?)',
                    ('existing','One',json.dumps(['example.com']),'2026-10-01'))

@@ -26,6 +26,10 @@ def populated(tmp_path):
                         '2026-11-01', 'pageview', '/' + site, domain))
             db.execute("INSERT INTO goals VALUES (?,?,?,?,?,?)",
                        (site + '-goal', site, 'Goal', 'pageview', '/' + site, '2026-11-01'))
+            db.execute("INSERT INTO site_owners VALUES (?,?,?,?)",
+                       (site, 'tenant-' + site, '2026-11-07', 'offline-operator'))
+            db.execute("INSERT INTO site_permissions VALUES (?,?,?,?)",
+                       (site, 'subject-' + site, 'analytics:read', '2026-11-07'))
     return source
 
 
@@ -35,7 +39,7 @@ def test_preview_does_not_mutate_database(tmp_path):
     result = preview_purge(path, "alpha")
     assert result['mode'] == 'preview'
     assert result['deletion_counts'] == {table: 1 for table in
-           ('sites', 'site_domains', 'sessions', 'events', 'goals')}
+           ('sites', 'site_domains', 'sessions', 'events', 'goals', 'site_owners', 'site_permissions')}
     assert path.read_bytes() == before
     assert not (tmp_path / 'backup.sqlite3').exists()
 
@@ -49,7 +53,7 @@ def test_site_purge_is_isolated_and_recoverable(tmp_path):
     assert verify_backup(backup)['events'] == 2
     assert backup.stat().st_mode & 0o777 == 0o600
     with sqlite3.connect(path) as db:
-        for table in ('sites', 'site_domains', 'sessions', 'events', 'goals'):
+        for table in ('sites', 'site_domains', 'sessions', 'events', 'goals', 'site_owners', 'site_permissions'):
             assert db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 1
             field = 'id' if table == 'sites' else 'site_id'
             assert db.execute(f'SELECT COUNT(*) FROM {table} WHERE {field}=?',

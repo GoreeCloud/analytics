@@ -1,7 +1,8 @@
 """Explicit and backup-gated migration from known unversioned Analytics schemas.
 
-Only the v0 to v1 SQLite schema step is supported. This is an offline
-maintenance command, never a startup auto-upgrade or background service.
+Only recognized v0/v1 SQLite schemas are accepted. This offline command
+upgrades to v2 with independently stored, initially EMPTY site-tenant and
+subject-permission records; it never claims existing sites for any user.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from .privacy import normalize_domain
 from .schema_audit import inspect_schema
 from .verification import txt_record_name
 
-TARGET_VERSION = 1
+TARGET_VERSION = 2
 SITE_DOMAINS_DDL = """
 CREATE TABLE IF NOT EXISTS site_domains (
     site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -52,11 +53,12 @@ def preview_migration(database: str | Path) -> dict:
                 raise ValueError("Invalid legacy domain registration; manual review required") from exc
     return {**report, "action": "apply-with-verified-backup",
             "target_version": TARGET_VERSION,
-            "newly_created_proofs_will_be_pending": True}
+            "existing_site_ownership_remains_unassigned": True,
+            "newly_created_proofs_will_be_pending": report["user_version"] == 0}
 
 
 def apply_migration(database: str | Path, backup_to: str | Path) -> dict:
-    """Back up to exclusive path before one atomic v0 -> v1 transaction."""
+    """Back up exclusively before one atomic, offline v0/v1 -> v2 transaction."""
     plan = preview_migration(database)
     if plan["action"] == "none":
         return {**plan, "mode": "already-current", "backup": None}
@@ -68,21 +70,39 @@ def apply_migration(database: str | Path, backup_to: str | Path) -> dict:
             db.execute("BEGIN IMMEDIATE")
             # Recheck while holding the writer lock; do not apply to a changed DB.
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version != 0:
+            if version != plan["user_version"] or version not in (0, 1):
                 raise ValueError("Database schema version changed during migration")
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if "site_domains" not in tables:
-                db.execute(SITE_DOMAINS_DDL)
-            # Existing proof rows are preserved; missing legacy hostnames
-            # are inserted as pending, never assumed verified.
-            for site_id, raw in db.execute("SELECT id, domains FROM sites"):
-                domains = json.loads(raw)
-                for domain in domains:
-                    if normalize_domain(domain) != domain:
-                        raise ValueError("Legacy domain normalization changed")
-                    db.execute("INSERT OR IGNORE INTO site_domains(site_id,domain,challenge,verified_at) "
-                               "VALUES(?,?,?,NULL)",
-                               (site_id, domain, secrets.token_urlsafe(32)))
+            if "site_owners" in tables or "site_permissions" in tables:
+                raise ValueError("Ownership mapping exists unexpectedly; manual review")
+            if version == 0:
+                if "site_domains" not in tables:
+                    db.execute(SITE_DOMAINS_DDL)
+                # Preserve existing proof; missing registrations remain pending.
+                for site_id, raw in db.execute("SELECT id, domains FROM sites"):
+                    domains = json.loads(raw)
+                    for domain in domains:
+                        if normalize_domain(domain) != domain:
+                            raise ValueError("Legacy domain normalization changed")
+                        db.execute("INSERT OR IGNORE INTO site_domains(site_id,domain,challenge,verified_at) "
+                                   "VALUES(?,?,?,NULL)",
+                                   (site_id, domain, secrets.token_urlsafe(32)))
+            # CREATE TABLE/INDEX in one explicit transaction: no executescript
+            # because sqlite3.executescript would commit the active transaction.
+            db.execute("CREATE TABLE site_owners ("
+                       "site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, "
+                       "tenant_id TEXT NOT NULL CHECK(length(tenant_id) BETWEEN 1 AND 128), "
+                       "assigned_at TEXT NOT NULL, "
+                       "assigned_by TEXT NOT NULL CHECK(assigned_by='offline-operator'))")
+            db.execute("CREATE INDEX ix_site_owners_tenant ON site_owners(tenant_id,site_id)")
+            db.execute("CREATE TABLE site_permissions ("
+                       "site_id TEXT NOT NULL REFERENCES site_owners(site_id) ON DELETE CASCADE, "
+                       "subject_id TEXT NOT NULL CHECK(length(subject_id) BETWEEN 1 AND 255), "
+                       "permission TEXT NOT NULL CHECK(permission IN "
+                       "('analytics:read','analytics:export','analytics:manage','analytics:admin','analytics:delete')), "
+                       "granted_at TEXT NOT NULL, "
+                       "PRIMARY KEY(site_id,subject_id,permission))")
+            db.execute("CREATE INDEX ix_site_permissions_subject ON site_permissions(subject_id,site_id)")
             db.execute(f"PRAGMA user_version={TARGET_VERSION}")
             db.commit()
         except Exception:
@@ -92,7 +112,8 @@ def apply_migration(database: str | Path, backup_to: str | Path) -> dict:
     if result["status"] != "ready":
         raise RuntimeError("Post-migration integrity failed; preserve backup for recovery")
     return {**result, "mode": "applied", "backup": backup,
-            "newly_created_proofs_are_pending": True}
+            "newly_created_proofs_are_pending": plan["user_version"] == 0,
+            "existing_site_ownership_remains_unassigned": True}
 
 
 def main() -> None:

@@ -14,7 +14,8 @@ import sqlite3
 from .backup import backup_database
 from .schema_audit import inspect_schema
 
-TABLES = ("sites", "site_domains", "sessions", "events", "goals")
+TABLES = ("sites", "site_domains", "sessions", "events", "goals",
+          "site_owners", "site_permissions")
 
 
 def _ready_database(database: str | Path) -> Path:

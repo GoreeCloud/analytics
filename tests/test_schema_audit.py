@@ -16,7 +16,7 @@ def test_current_schema_audits_without_mutating(tmp_path):
     before = path.read_bytes()
     report = inspect_schema(path)
     assert report['status'] == 'ready'
-    assert report['user_version'] == 1
+    assert report['user_version'] == 2
     assert report['missing_columns'] == {}
     assert report['missing_tables'] == []
     assert report['schema_migration_performed'] is False
