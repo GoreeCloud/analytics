@@ -96,6 +96,10 @@ python -m compileall -q analytics
 
 A local HTTP smoke test has exercised a running localhost server, administrator authorization, registration, collection and summaries. A real graphical browser end-to-end test is still pending.
 
+## Site-wide data deletion (offline, explicit)
+
+The development CLI can preview a site's records and remove the entire site plus its events, sessions, saved goals, and DNS ownership records after an exclusive verified backup. The operator must stop all writers, re-enter the exact site ID, and provide a new private backup destination; the command refuses a changed database before deletion. **It cannot identify or erase an individual anonymous visitor**, and existing backups may still contain the deleted site's data. See [Offline site deletion](docs/DATA-DELETION.md) for commands, recovery guidance, privacy limitations, and acceptance gates.
+
 ## Data retention (offline maintenance)
 
 The initial service has a **manual, dry-run-first** retention utility. It does not silently delete historical data or schedule recurring cleanup. The CLI **requires** an exclusive, integrity-verified backup before it will prune records:
