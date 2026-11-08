@@ -80,6 +80,8 @@ def test_legacy_registration_requires_explicit_backup_gated_upgrade(tmp_path):
     # layout. The new application must never mutate that legacy DB on start.
     Storage(str(path))
     with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE site_permissions")
+        db.execute("DROP TABLE site_owners")
         db.execute("DROP TABLE site_domains")
         db.execute("PRAGMA user_version=0")
         db.execute("INSERT INTO sites VALUES ('old-site','Example',?, '2026-10-01')",

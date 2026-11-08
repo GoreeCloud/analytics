@@ -23,6 +23,12 @@ REQUIRED_COLUMNS = {
                "utm_medium", "utm_campaign"},
     "goals": {"id", "site_id", "name", "kind", "target", "created_at"},
 }
+# v2 adds a *separate*, operator-verified binding. A signed tenant claim is
+# never itself permission or site ownership. Existing sites remain unassigned.
+OWNERSHIP_COLUMNS = {
+    "site_owners": {"site_id", "tenant_id", "assigned_at", "assigned_by"},
+    "site_permissions": {"site_id", "subject_id", "permission", "granted_at"},
+}
 
 
 # A same-named table or index need not enforce the expected relational contract.
@@ -30,6 +36,8 @@ REQUIRED_COLUMNS = {
 REQUIRED_PRIMARY_KEYS = {
     "sites": ("id",), "site_domains": ("site_id", "domain"),
     "sessions": ("id",), "events": ("id",), "goals": ("id",),
+    "site_owners": ("site_id",),
+    "site_permissions": ("site_id", "subject_id", "permission"),
 }
 REQUIRED_FOREIGN_KEYS = {
     "site_domains": {("site_id", "sites", "id", "CASCADE")},
@@ -37,12 +45,16 @@ REQUIRED_FOREIGN_KEYS = {
     "events": {("site_id", "sites", "id", "CASCADE"),
                ("session_id", "sessions", "id", "CASCADE")},
     "goals": {("site_id", "sites", "id", "CASCADE")},
+    "site_owners": {("site_id", "sites", "id", "CASCADE")},
+    "site_permissions": {("site_id", "site_owners", "site_id", "CASCADE")},
 }
 REQUIRED_INDEXES = {
     "sessions": {"ix_sessions_recent": ("site_id", "visitor_hash", "last_seen")},
     "events": {"ix_events_site_ts": ("site_id", "ts"),
                "ix_events_session": ("session_id", "ts")},
     "goals": {"ix_goals_site": ("site_id",)},
+    "site_owners": {"ix_site_owners_tenant": ("tenant_id", "site_id")},
+    "site_permissions": {"ix_site_permissions_subject": ("subject_id", "site_id")},
 }
 
 
@@ -99,9 +111,10 @@ def inspect_schema(path: str | Path) -> dict:
             tables = {row[0] for row in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )}
-            missing = sorted(set(REQUIRED_COLUMNS) - tables)
+            required_columns = {**REQUIRED_COLUMNS, **OWNERSHIP_COLUMNS} if version == 2 else REQUIRED_COLUMNS
+            missing = sorted(set(required_columns) - tables)
             missing_columns = {}
-            for table, columns in REQUIRED_COLUMNS.items():
+            for table, columns in required_columns.items():
                 if table not in tables:
                     continue
                 # Table names are hardcoded above and never request-derived.
@@ -115,10 +128,14 @@ def inspect_schema(path: str | Path) -> dict:
             # No schema version is written or inferred. Older Analytics schemas
             # are detected but are NEVER silently repaired by this audit.
             ready = not missing and not missing_columns and not invalid_fk and not structural_issues
-            can_migrate = (version == 0 and not missing_columns and not invalid_fk and not structural_issues
-                           and (not missing or missing == ["site_domains"]))
-            status = ("ready" if ready and version == 1 else
-                      "migration-required" if can_migrate else "review-required")
+            no_ownership = not (set(OWNERSHIP_COLUMNS) & tables)
+            can_migrate_v0 = (version == 0 and no_ownership and not missing_columns and
+                              not invalid_fk and not structural_issues and
+                              (not missing or missing == ["site_domains"]))
+            can_migrate_v1 = (version == 1 and no_ownership and ready)
+            status = ("ready" if ready and version == 2 else
+                      "migration-required" if can_migrate_v0 or can_migrate_v1 else
+                      "review-required")
             return {
                 "database": str(target),
                 "user_version": version,
