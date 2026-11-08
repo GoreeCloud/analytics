@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — offline permission revocation (development only)
+
+- Add exact site/tenant/subject/action permission revocation with read-only preview, four explicit confirmations, protected exclusive verified backup, SQLite writer-lock verification and tests for race rollback and unaffected grants. This does not revoke issued Identity tokens or browser sessions.
+
 ## Unreleased — optional Identity API authorization seam (development only)
 
 - Add a startup-fail-closed `identity` API mode requiring a separately reviewed cryptographic token-verifier callback. It checks exact owner/subject/action bindings, filters site listings, and rejects legacy admin token fallback; site onboarding stays blocked. The regression tests use an in-process synthetic verifier only, **not** real signed tokens, an operational OIDC browser login or production Identity integration.
