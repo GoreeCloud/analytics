@@ -23,7 +23,14 @@ def site(client, name="Example", domain="example.com"):
     response = client.post("/api/v1/sites", headers=auth(client),
                            json={"name": name, "domains": [domain]})
     assert response.status_code == 201, response.text
-    return response.json()["id"]
+    created = response.json()
+    proof = created["verification"][0]
+    client.app.state.txt_lookup = lambda record: (
+        [proof["record_value"]] if record == proof["record_name"] else [])
+    checked = client.post(f'/api/v1/sites/{created["id"]}/domains/verify',
+                          json={"domain": domain}, headers=auth(client))
+    assert checked.status_code == 200, checked.text
+    return created["id"]
 
 
 def track(client, site_id, type="pageview", url="https://example.com/home", name="", extra=None, headers=None):

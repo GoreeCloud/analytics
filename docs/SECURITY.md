@@ -4,7 +4,7 @@
 
 ## Trust boundaries
 
-1. **Collector (public):** anyone with a site ID can submit events. Each request is streamed with an enforced 4 KB cap, must identify a previously registered exact-match domain, and must use a matching `Origin` header when present. These are abuse-reduction signals, **not proof of visitor authenticity**. Network edge rate limiting, bot defense, quotas, and ingestion integrity are not yet provided.
+1. **Collector (public):** anyone with a site ID can submit events **after** the site hostname has passed administrator-triggered DNS TXT ownership proof. Each request is streamed with an enforced 4 KB cap, must identify a DNS-verified exact-match domain, and must use a matching `Origin` header when present. These are abuse-reduction signals, **not proof of visitor authenticity**. Network edge rate limiting, bot defense, quotas, and ingestion integrity are not yet provided.
 2. **Administrator API:** requires an environment-supplied bearer token of at least 32 characters. Token is kept only in the dashboard tab's JS memory, not browser storage. There is no multi-user authentication or RBAC. Restrict admin access to localhost or a trusted VPN until GoreeCloud Identity integration is implemented.
 3. **Database:** SQLite contains event times, sanitized paths, referrer hostnames, coarse browser family, UTM tags, constrained event properties and daily HMAC visitor hashes. It does **not** intentionally store full IP addresses, complete referrer URLs, raw user-agent strings, cookies, or user-supplied distinct IDs.
 4. **Infrastructure:** Docker/Compose is local-only by default; reverse-proxy/TLS and trusted client IP handling are unverified. No external database or SaaS dependency is required for the MVP.
@@ -14,7 +14,7 @@
 - Explicit admin and HMAC secrets, no fallback defaults, distinct 32+ character requirements.
 - Strict authorization on all admin/reporting routes, including exports.
 - Bounded streaming event body (4 KB) and field length limits; allowlisted event names and property keys, basic value detection.
-- Registered-host equality check and collection origin matching.
+- Registered-host equality check and collection origin matching, plus an administrator-triggered per-host DNS TXT challenge before intake. Existing registered domains are migrated as unverified pending and must be reverified.
 - DNT and Global Privacy Control suppression; explicit first-party opt-out preference (no stored visitor identifier).
 - Daily HMAC visitor identifiers, no IP storage; path-segment masking for likely identities, including selected repeatedly URL-encoded email addresses. Event property values with decoded email-like identifiers are rejected.
 - Additional narrow safeguards reject selected formatted Social Security numbers, IPv4/IPv6 addresses and telephone-like identifiers in string event properties; matching path segments are redacted and sensitive UTM values omitted. These are heuristic patterns, **not comprehensive PII detection**. Legitimate non-personal labels resembling those patterns may be filtered.
@@ -29,7 +29,7 @@
 
 ## Known open risks and release blockers
 
-- Caller can forge `Origin`, URL, user agent, and public site ID. Collection should not be used for security-sensitive billing/audit claims.
+- Caller can forge `Origin`, URL, user agent, and public site ID. DNS TXT proof confirms control of one DNS record at verification time, not visitor authenticity, legal ownership or durable control. Resolver cache/trust, DNS poisoning, future domain transfers and the absence of periodic proof checks remain open risks. Collection should not be used for security-sensitive billing/audit claims.
 - Site-wide single admin token is not suitable for organizations; no per-tenant roles, rotation UX, account lockout, or audit trails.
 - In-process layered rate limits are reset by restart, not shared across workers or replicas, and can be bypassed by distributed traffic. They are not edge DDoS protection.
 - Traffic behind a reverse proxy can appear to originate from one proxy IP. Trust proxy forwarded addresses **only** when configured with explicit trusted proxy hosts.
