@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — optional Identity API authorization seam (development only)
+
+- Add a startup-fail-closed `identity` API mode requiring a separately reviewed cryptographic token-verifier callback. It checks exact owner/subject/action bindings, filters site listings, and rejects legacy admin token fallback; site onboarding stays blocked. The regression tests use an in-process synthetic verifier only, **not** real signed tokens, an operational OIDC browser login or production Identity integration.
+
 ## Unreleased — SQLite v2 independent site ownership foundation
 
 - Add the offline first-owner binding command with explicit site/tenant confirmation,
