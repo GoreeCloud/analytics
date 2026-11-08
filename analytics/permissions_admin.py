@@ -7,6 +7,7 @@ site, tenant, subject, permission, and scope before applying.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from contextlib import closing
 from datetime import datetime, timezone
 import json
@@ -36,9 +37,16 @@ def _snapshot(db: sqlite3.Connection, site_id: str, tenant_id: str,
                      (site_id, subject_id, permission)).fetchone()
     if row is None:
         raise ValueError('Exact permission grant does not exist')
-    count = db.execute('SELECT COUNT(*) FROM site_permissions WHERE site_id=?',
-                       (site_id,)).fetchone()[0]
-    return (tuple(owner), row[0], count)
+    grants = tuple(tuple(item) for item in db.execute(
+        'SELECT subject_id,permission,granted_at FROM site_permissions '
+        'WHERE site_id=? ORDER BY subject_id,permission', (site_id,)))
+    return (tuple(owner), row[0], grants)
+
+
+def _fingerprint(snapshot: tuple) -> str:
+    # A digest permits the preview to detect same-count mutations without
+    # publishing the full site member/permission roster on the CLI.
+    return hashlib.sha256(json.dumps(snapshot, separators=(',', ':')).encode()).hexdigest()
 
 
 def preview_permission_revocation(database: str | Path, site_id: str,
@@ -51,10 +59,11 @@ def preview_permission_revocation(database: str | Path, site_id: str,
         raise ValueError('Database must pass exact SQLite v2 ownership schema audit')
     path = Path(database).expanduser().absolute()
     with closing(_readonly(path)) as db:
-        _, _, count = _snapshot(db, site_id, tenant_id, subject_id, permission)
+        snapshot = _snapshot(db, site_id, tenant_id, subject_id, permission)
     return {'mode': 'preview', 'site_id': site_id, 'tenant_id': tenant_id,
             'subject_id': subject_id, 'permission': permission,
-            'site_permissions_before': count,
+            'site_permissions_before': len(snapshot[2]),
+            'site_grant_snapshot_sha256': _fingerprint(snapshot),
             'requires_stopped_writers': True, 'verified_backup_required': True,
             'does_not_revoke_issued_oauth_tokens': True}
 
@@ -74,8 +83,8 @@ def apply_permission_revocation(database: str | Path, site_id: str,
     backup = backup_database(source, backup_to)
     with closing(_readonly(Path(backup['destination']))) as restored:
         snapshot = _snapshot(restored, site_id, tenant_id, subject_id, permission)
-    if snapshot[2] != plan['site_permissions_before']:
-        raise RuntimeError('Permission count changed since preview; no revocation made')
+    if _fingerprint(snapshot) != plan['site_grant_snapshot_sha256']:
+        raise RuntimeError('Site grant set changed since preview; no revocation made')
     with closing(sqlite3.connect(source, timeout=10)) as db:
         db.execute('PRAGMA foreign_keys=ON')
         try:
@@ -93,9 +102,12 @@ def apply_permission_revocation(database: str | Path, site_id: str,
                     db, site_id=site_id, trusted_tenant_id=tenant_id,
                     trusted_subject_id=subject_id, permission=permission):
                 raise RuntimeError('Revocation verification failed; no change committed')
-            count = db.execute('SELECT COUNT(*) FROM site_permissions WHERE site_id=?',
-                               (site_id,)).fetchone()[0]
-            if count != snapshot[2] - 1 or db.execute('PRAGMA foreign_key_check').fetchone():
+            remaining = tuple(tuple(item) for item in db.execute(
+                'SELECT subject_id,permission,granted_at FROM site_permissions '
+                'WHERE site_id=? ORDER BY subject_id,permission', (site_id,)))
+            expected = tuple(item for item in snapshot[2] if
+                             (item[0], item[1]) != (subject_id, permission))
+            if remaining != expected or db.execute('PRAGMA foreign_key_check').fetchone():
                 raise RuntimeError('Unexpected permission or foreign-key change; no revocation committed')
             db.commit()
         except Exception:
@@ -103,7 +115,7 @@ def apply_permission_revocation(database: str | Path, site_id: str,
             raise
     if inspect_schema(source)['status'] != 'ready':
         raise RuntimeError('Post-revocation audit failed; preserve backup for independent review')
-    return {**plan, 'mode': 'applied', 'site_permissions_after': snapshot[2] - 1,
+    return {**plan, 'mode': 'applied', 'site_permissions_after': len(snapshot[2]) - 1,
             'verified_backup': backup,
             'no_token_or_session_revocation_performed': True}
 

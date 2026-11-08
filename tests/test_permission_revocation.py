@@ -138,3 +138,47 @@ def test_cli_preview_and_missing_confirmations(tmp_path):
     assert refusal.returncode!=0 and 'all four' in refusal.stderr
     with sqlite3.connect(path) as db:
         assert db.execute('SELECT COUNT(*) FROM site_permissions').fetchone()[0]==4
+
+
+def test_same_count_unrelated_grant_change_detected_before_revoke(tmp_path,monkeypatch):
+    path=data(tmp_path)
+    backup=tmp_path/'before-swap.sqlite3'
+    from analytics import permissions_admin
+    actual=permissions_admin.backup_database
+    def swap_other_grant(*values):
+        evidence=actual(*values)
+        with sqlite3.connect(path) as db:
+            db.execute("UPDATE site_permissions SET permission='analytics:manage' "
+                       "WHERE site_id='alpha' AND subject_id='bob' "
+                       "AND permission='analytics:read'")
+        return evidence
+    monkeypatch.setattr(permissions_admin, 'backup_database', swap_other_grant)
+    with pytest.raises(RuntimeError,match='changed since backup'):
+        apply_permission_revocation(path,*args(),backup,*args())
+    assert backup.exists() and verify_backup(backup)['sites']==2
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM site_permissions WHERE site_id='alpha'").fetchone()[0]==3
+        assert has_site_permission(db,site_id='alpha',trusted_tenant_id='tenant-a',
+                                   trusted_subject_id='alice',permission='analytics:export')
+
+
+def test_trigger_mutation_of_unrelated_grant_rolls_back_revocation(tmp_path):
+    path=data(tmp_path)
+    with sqlite3.connect(path) as db:
+        db.execute("""
+          CREATE TRIGGER sabotage_after_grant_delete AFTER DELETE ON site_permissions
+          WHEN OLD.site_id='alpha' AND OLD.subject_id='alice'
+          BEGIN
+            UPDATE site_permissions SET granted_at='modified-by-trigger'
+             WHERE site_id='alpha' AND subject_id='bob';
+          END
+        """)
+    backup=tmp_path/'before-trigger.sqlite3'
+    with pytest.raises(RuntimeError,match='Unexpected permission'):
+        apply_permission_revocation(path,*args(),backup,*args())
+    assert backup.exists() and verify_backup(backup)['sites']==2
+    with sqlite3.connect(path) as db:
+        assert has_site_permission(db,site_id='alpha',trusted_tenant_id='tenant-a',
+                                   trusted_subject_id='alice',permission='analytics:export')
+        assert db.execute("SELECT granted_at FROM site_permissions WHERE site_id='alpha' "
+                          "AND subject_id='bob'").fetchone()[0]=='2026-11-07'
