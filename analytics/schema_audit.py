@@ -25,6 +25,65 @@ REQUIRED_COLUMNS = {
 }
 
 
+# A same-named table or index need not enforce the expected relational contract.
+# Audit known v1 key/cascade/index definitions before treating it as safe.
+REQUIRED_PRIMARY_KEYS = {
+    "sites": ("id",), "site_domains": ("site_id", "domain"),
+    "sessions": ("id",), "events": ("id",), "goals": ("id",),
+}
+REQUIRED_FOREIGN_KEYS = {
+    "site_domains": {("site_id", "sites", "id", "CASCADE")},
+    "sessions": {("site_id", "sites", "id", "CASCADE")},
+    "events": {("site_id", "sites", "id", "CASCADE"),
+               ("session_id", "sessions", "id", "CASCADE")},
+    "goals": {("site_id", "sites", "id", "CASCADE")},
+}
+REQUIRED_INDEXES = {
+    "sessions": {"ix_sessions_recent": ("site_id", "visitor_hash", "last_seen")},
+    "events": {"ix_events_site_ts": ("site_id", "ts"),
+               "ix_events_session": ("session_id", "ts")},
+    "goals": {"ix_goals_site": ("site_id",)},
+}
+
+
+def inspect_constraints(db: sqlite3.Connection, tables: set[str]) -> dict:
+    """Report missing v1 keys/cascades/index definitions without mutating SQL."""
+    missing_primary_keys = []
+    missing_foreign_keys = {}
+    missing_indexes = {}
+    for table, required in REQUIRED_PRIMARY_KEYS.items():
+        if table not in tables:
+            continue
+        details = list(db.execute(f"PRAGMA table_info({table})"))
+        actual = tuple(row[1] for row in sorted((x for x in details if x[5] > 0),
+                                                  key=lambda x: x[5]))
+        if actual != required:
+            missing_primary_keys.append(table)
+    for table, required in REQUIRED_FOREIGN_KEYS.items():
+        if table not in tables:
+            continue
+        actual = {(r[3], r[2], r[4], r[6].upper()) for r in
+                  db.execute(f"PRAGMA foreign_key_list({table})")}
+        absent = sorted(required - actual)
+        if absent:
+            missing_foreign_keys[table] = [list(item) for item in absent]
+    for table, required in REQUIRED_INDEXES.items():
+        if table not in tables:
+            continue
+        present = {r[1] for r in db.execute(f"PRAGMA index_list({table})")}
+        absent = []
+        for name, columns in required.items():
+            # All table/index identifiers are hardcoded above; none are input.
+            if name not in present or tuple(r[2] for r in db.execute(
+                    f"PRAGMA index_info({name})")) != columns:
+                absent.append(name)
+        if absent:
+            missing_indexes[table] = absent
+    return {"invalid_primary_keys": sorted(missing_primary_keys),
+            "missing_foreign_keys": missing_foreign_keys,
+            "missing_indexes": missing_indexes}
+
+
 def inspect_schema(path: str | Path) -> dict:
     """Read a database without creating it or changing its schema or data."""
     target = Path(path).expanduser().absolute()
@@ -51,10 +110,12 @@ def inspect_schema(path: str | Path) -> dict:
                 if absent:
                     missing_columns[table] = absent
             invalid_fk = db.execute("PRAGMA foreign_key_check").fetchmany(1)
+            constraints = inspect_constraints(db, tables)
+            structural_issues = any(constraints.values())
             # No schema version is written or inferred. Older Analytics schemas
             # are detected but are NEVER silently repaired by this audit.
-            ready = not missing and not missing_columns and not invalid_fk
-            can_migrate = (version == 0 and not missing_columns and not invalid_fk
+            ready = not missing and not missing_columns and not invalid_fk and not structural_issues
+            can_migrate = (version == 0 and not missing_columns and not invalid_fk and not structural_issues
                            and (not missing or missing == ["site_domains"]))
             status = ("ready" if ready and version == 1 else
                       "migration-required" if can_migrate else "review-required")
@@ -65,6 +126,7 @@ def inspect_schema(path: str | Path) -> dict:
                 "missing_tables": missing,
                 "missing_columns": missing_columns,
                 "foreign_key_violations_detected": bool(invalid_fk),
+                **constraints,
                 "schema_migration_performed": False,
             }
     except sqlite3.DatabaseError as exc:

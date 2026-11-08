@@ -4,7 +4,7 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 
-from .schema_audit import REQUIRED_COLUMNS
+from .schema_audit import REQUIRED_COLUMNS, inspect_constraints
 
 SCHEMA_VERSION = 1
 EXPECTED_TABLES = frozenset({"sites", "site_domains", "sessions", "events", "goals"})
@@ -98,6 +98,12 @@ class Storage:
                     if not required.issubset(columns):
                         valid = False
                         break
+            if valid:
+                # Required columns alone cannot prove cascade/index integrity.
+                if any(inspect_constraints(db, tables).values()):
+                    valid = False
+                elif db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    valid = False
             if not valid:
                 # Fail closed instead of silently modifying a live legacy DB.
                 # Operators must take an offline verified backup and explicitly
