@@ -31,3 +31,33 @@ def test_nonregular_database_targets_are_rejected(tmp_path):
         pytest.skip('symlinks unavailable')
     with pytest.raises(ValueError, match='symbolic link'):
         Storage(str(link))
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX file mode required')
+@pytest.mark.parametrize('suffix', ['-wal','-shm','-journal'])
+def test_world_readable_sqlite_sidecar_is_rejected_before_open(tmp_path, suffix):
+    database = tmp_path / 'analytics.sqlite3'
+    Storage(str(database))
+    sibling = tmp_path / ('analytics.sqlite3' + suffix)
+    sibling.write_bytes(b'not live data')
+    sibling.chmod(0o644)
+    with pytest.raises(PermissionError, match='SQLite sidecar'):
+        Storage(str(database))
+    sibling.unlink()
+    Storage(str(database))
+
+
+def test_sqlite_sidecar_symlinks_and_nonregular_files_rejected(tmp_path):
+    database = tmp_path / 'analytics.sqlite3'
+    Storage(str(database))
+    sibling = tmp_path / 'analytics.sqlite3-wal'
+    sibling.mkdir()
+    with pytest.raises(ValueError, match='sidecar must be a regular file'):
+        Storage(str(database))
+    sibling.rmdir()
+    try:
+        sibling.symlink_to(database)
+    except (NotImplementedError, OSError):
+        pytest.skip('symlinks unavailable')
+    with pytest.raises(ValueError, match='sidecar cannot be a symbolic link'):
+        Storage(str(database))
