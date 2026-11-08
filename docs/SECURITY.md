@@ -35,6 +35,7 @@
 - Caller can forge `Origin`, URL, user agent, and public site ID. DNS TXT proof confirms control of one DNS record at verification time, not visitor authenticity, legal ownership or durable control. Resolver cache/trust, DNS poisoning, future domain transfers and the absence of periodic proof checks remain open risks. Collection should not be used for security-sensitive billing/audit claims.
 - Site-wide single admin token is not suitable for organizations; no per-tenant roles, rotation UX, account lockout, or audit trails.
 - In-process layered rate limits are reset by restart, not shared across workers or replicas, and can be bypassed by distributed traffic. They are not edge DDoS protection.
+- Anonymous rate-limit tables have a 10,000-key in-memory ceiling per limiter; when saturated, new keys are rejected until expired entries can be evicted. This prevents single-minute key-flood memory growth but can temporarily reject legitimate new visitors and is not a substitute for edge traffic controls.
 - Traffic behind a reverse proxy can appear to originate from one proxy IP. Trust proxy forwarded addresses **only** when configured with explicit trusted proxy hosts.
 - Event values may still contain personal data despite the property-key denylist and basic value checks. Add stronger consent/data classification, redaction and deletion controls.
 - Simple path masking cannot guarantee all PII is removed. Privacy review must inspect real representative URLs, logs and properties before enabling third-party traffic.

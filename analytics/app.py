@@ -69,11 +69,16 @@ class SingleNodeLimiter:
     def check(self, key: str) -> bool:
         window = int(time.monotonic() // 60)
         with self._lock:
+            # Keep a hard memory ceiling even when a flood introduces new
+            # identifiers within a single minute. Previous cleanup kept all
+            # current-window keys, allowing unbounded memory growth.
+            if key not in self._data and len(self._data) >= 10000:
+                self._data = {k: v for k, v in self._data.items() if v[0] == window}
+                if len(self._data) >= 10000:
+                    return False  # Fail closed for new keys until next window.
             old_window, count = self._data.get(key, (window, 0))
             count = count + 1 if old_window == window else 1
             self._data[key] = (window, count)
-            if len(self._data) > 10000:
-                self._data = {k: v for k, v in self._data.items() if v[0] == window}
             return count <= self.limit
 
 
