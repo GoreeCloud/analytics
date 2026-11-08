@@ -22,6 +22,10 @@ uvicorn analytics.app:build --factory --host 127.0.0.1 --port 8000 --no-access-l
 
 Open http://127.0.0.1:8000 and supply the admin token that was generated in your terminal. **Persist the tokens in a secure secret store if you want data access across restarts.** Restarting with a new hash secret resets anonymous identity continuity; keep secrets private and outside Git.
 
+### Existing database upgrade safety
+
+This build introduces an explicit SQLite `user_version=1` marker. New databases are initialized automatically, but existing unversioned installations (including earlier DNS-gated v0.1.2 builds) **cannot start until explicitly migrated**. Stop application writers, create an independently protected backup, run `python -m analytics.migrate --database /path/to/analytics.sqlite3` to preview, then use `--apply --backup-to /private/new-backup.sqlite3` to apply with a verified exclusive backup. See [Migration Guide](docs/MIGRATION.md) and [Read-only Schema Audit](docs/SCHEMA-AUDIT.md). Legacy hostnames remain pending or retain existing proof status; verify the DNS proof state before restarting tracking. No automatic migration or production upgrade is claimed.
+
 ### Docker Compose (local-only by default)
 
 Set the two environment variables using **independent random values** (the `.env.example` intentionally contains empty fields, not usable secrets), then run:

@@ -12,10 +12,10 @@
 
 ## Migration, operations, limitations
 
-- **Back up first.** A startup schema addition creates `site_domains` and migrates previous domain registrations as **pending** without deleting old sites, sessions or events. Pending domains stop ingesting events until checked. This is an intentional breaking behavior change and requires a planned maintenance window for any existing installation.
+- **Back up first.** Application startup now **refuses unversioned existing databases**. Follow the explicit [migration procedure](MIGRATION.md) to create a verified, non-overwriting pre-upgrade backup, migrate known legacy schemas and mark old unverified hostnames **pending** without deleting sites, visits or events. This is an intentional breaking behavior change and requires a maintenance window.
 - DNS queries use the machine's configured recursive resolver, not arbitrary URLs or shell programs. Queries are bounded to three seconds; repeated requests are limited per site and domain on this node. DNS resolver failure returns 503 and missing/mismatched records return 409.
 - Proof grants event ingestion permission for an exact hostname; it does **not** authenticate individual event submissions or prove legal domain ownership. It does not defend against subsequent domain transfers, DNS tampering, forged client data, or distributed abuse.
-- An authenticated manual `POST /api/v1/sites/{site_id}/domains/revoke` action can invalidate one hostname's proof and rotate its TXT challenge without deleting historical events. Collection immediately stops until reverified. There is still no periodic DNS re-verification, automated ownership-transfer detection, or versioned migration/rollback path.
+- An authenticated manual `POST /api/v1/sites/{site_id}/domains/revoke` action can invalidate one hostname's proof and rotate its TXT challenge without deleting historical events. Collection immediately stops until reverified. There is still no periodic DNS re-verification or automated ownership-transfer detection. Schema marker v1 and backup-gated offline migration cover only known SQLite development layouts; no full migration/rollback framework has been accepted.
 - The current dashboard administrator token remains a single shared secret. GoreeCloud Identity RBAC, Wardveil network-edge enforcement, and GoreeShield privacy-consent governance are not implemented.
 
 Tests use an injected DNS resolver fake, with no external TXT lookups. No live DNS propagation, browser visual acceptance, or production migration has been asserted.

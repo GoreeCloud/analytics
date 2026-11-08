@@ -1,10 +1,13 @@
 """SQLite persistence for the single-node MVP; migration to Postgres is planned."""
 import sqlite3
-import json
-import secrets
 import os
 from contextlib import contextmanager
 from pathlib import Path
+
+from .schema_audit import REQUIRED_COLUMNS
+
+SCHEMA_VERSION = 1
+EXPECTED_TABLES = frozenset({"sites", "site_domains", "sessions", "events", "goals"})
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -66,31 +69,44 @@ CREATE INDEX IF NOT EXISTS ix_goals_site ON goals(site_id);
 class Storage:
     def __init__(self, path: str):
         self.path = path
+        created = path == ":memory:"
         if path != ":memory:":
             target = Path(path)
             target.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             if target.is_symlink():
                 raise ValueError("Database path cannot be a symbolic link")
             if not target.exists():
-                # SQLite otherwise creates fresh databases with broad 0644
-                # permissions on a typical umask. New analytics files contain
-                # visitor data and must be owner-only by default.
                 try:
                     fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
                 except FileExistsError:
-                    pass  # Another worker won creation; SQLite opens it below.
+                    pass  # Another process won creation; it must finish setup first.
                 else:
                     os.close(fd)
+                    created = True
         with self.connect() as db:
-            db.executescript(SCHEMA)
-            # Legacy sites preserve their data, but must prove DNS control
-            # before new events can be accepted. Fail closed on upgrade.
-            for row in db.execute("SELECT id, domains FROM sites"):
-                for domain in json.loads(row["domains"]):
-                    db.execute(
-                        "INSERT OR IGNORE INTO site_domains(site_id,domain,challenge,verified_at) "
-                        "VALUES(?,?,?,NULL)",
-                        (row["id"], domain, secrets.token_urlsafe(32)))
+            if created:
+                db.executescript(SCHEMA)
+                db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                return
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            tables = {r[0] for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            valid = version == SCHEMA_VERSION and EXPECTED_TABLES.issubset(tables)
+            if valid:
+                for table, required in REQUIRED_COLUMNS.items():
+                    columns = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+                    if not required.issubset(columns):
+                        valid = False
+                        break
+            if not valid:
+                # Fail closed instead of silently modifying a live legacy DB.
+                # Operators must take an offline verified backup and explicitly
+                # run the narrow migration CLI before restarting the service.
+                raise RuntimeError(
+                    "Database schema is unversioned/incomplete or unsupported. "
+                    "Stop the service; run python -m analytics.migrate with "
+                    "--database, --backup-to and --apply after an offline review."
+                )
 
     @contextmanager
     def connect(self):
