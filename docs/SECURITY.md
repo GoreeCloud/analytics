@@ -28,6 +28,7 @@
 - Automated request/authorization/privacy regression tests.
 
 - An authenticated per-host manual revocation API can stop new collection and rotate one DNS TXT challenge without deleting historical analytics events. It has no dashboard control and is not automatic ownership-transfer detection.
+- Collector event commits repeat the ownership check under SQLite's writer lock; a revocation committed before that transaction blocks ingestion. An event committed before a concurrent revocation acquires the lock remains historical data.
 
 ## Known open risks and release blockers
 
