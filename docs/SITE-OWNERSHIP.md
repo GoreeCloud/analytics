@@ -20,7 +20,9 @@ The current Analytics admin API still uses the development shared token.
    Test snapshot restoration and reconcile site counts before restarting.
 
 `site_owners(site_id, tenant_id, assigned_at, assigned_by)` is intentionally
-empty until a separately reviewed operator-controlled ownership action exists.
+empty until an operator explicitly binds the first owner through the offline,
+verified-backup-gated [Owner Assignment CLI](OWNER-ASSIGNMENT.md). The operator
+must independently verify real ownership and subject/tenant identifiers.
 `site_permissions(site_id, subject_id, permission, granted_at)` binds a
 trusted Identity subject to an independently owned site and explicit action.
 No Identity authorization is enabled merely by creating these tables.

@@ -26,6 +26,12 @@ Open http://127.0.0.1:8000 and supply the admin token that was generated in your
 
 This build uses explicit SQLite `user_version=2` with empty site-to-tenant ownership and subject-permission tables. New databases are initialized automatically, but existing v0/v1 installations (including earlier DNS-gated v0.1.2 builds) **cannot start until explicitly migrated**. Stop application writers, create an independently protected backup, run `python -m analytics.migrate --database /path/to/analytics.sqlite3` to preview, then use `--apply --backup-to /private/new-backup.sqlite3` to apply with a verified exclusive backup. See [Migration Guide](docs/MIGRATION.md) and [Read-only Schema Audit](docs/SCHEMA-AUDIT.md). Legacy hostnames remain pending or retain existing proof status; verify the DNS proof state before restarting tracking. Existing sites remain **unassigned to any tenant**. A signed tenant claim alone is not site ownership, and the current admin API has no Identity integration. See [Site Ownership v2](docs/SITE-OWNERSHIP.md). No automatic migration or production upgrade is claimed.
 
+**Explicit owner assignment (development only):** After an independently reviewed
+site/tenant/principal evidence check, use the offline, backup-gated
+[Owner Assignment CLI](docs/OWNER-ASSIGNMENT.md) to bind the first owner and
+specific subject/action permissions. It neither authenticates users nor changes
+the existing shared-token admin API. No owner is assigned automatically.
+
 ### Docker Compose (local-only by default)
 
 Set the two environment variables using **independent random values** (the `.env.example` intentionally contains empty fields, not usable secrets), then run:

@@ -41,4 +41,4 @@ These strings are **proposed** permission names, not existing GoreeCloud Identit
 
 GoreeShield owns data minimization, permissions transparency and consent/retention expectations. Wardveil owns threat monitoring, token/key abuse controls and incident response. GoreeCloud Mesh owns API interoperability. GoreeCloud UI owns the sign-in/admin experience. **GoreeCloud Identity owns principal authentication**, while Analytics must enforce its own resource ownership and least-privilege API decisions.
 
-The separate v2 schema foundation is described in [Site Ownership](SITE-OWNERSHIP.md); this integration design does not authenticate users, deploy a service, or change credentials.
+The separate v2 schema foundation and offline, manually confirmed first-owner binding are described in [Site Ownership](SITE-OWNERSHIP.md) and [Owner Assignment](OWNER-ASSIGNMENT.md); this integration design does not authenticate users, deploy a service, or change credentials.
