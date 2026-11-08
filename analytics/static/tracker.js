@@ -15,10 +15,52 @@
   const hasGlobalPrivacySignal = () =>
     navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true;
   const isOptedOut = () => optedOut || hasGlobalPrivacySignal();
+  // Minimize values BEFORE transmission: server-side redaction is defense-in-depth,
+  // not permission to send arbitrary query strings or detailed referrer URLs.
+  const decodedForPrivacy = (value) => {
+    for (let count = 0; count < 6; count++) {
+      try {
+        const next = decodeURIComponent(value);
+        if (next === value) break;
+        value = next;
+      } catch (_) { break; }
+    }
+    return value;
+  };
+  const sensitive = (value) => {
+    const decoded = decodedForPrivacy(value);
+    return decoded.length > 32 || /@|[0-9]{5,}|(?:bearer|secret|token|apikey|accesskey|password)[_=-]|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|[0-9]{3}[-. ]?[0-9]{3}[-. ]?[0-9]{4}/i.test(decoded);
+  };
+  const minimizedPageUrl = () => {
+    let url;
+    try { url = new URL(location.href); } catch (_) { return null; }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    // A pathname can contain an email address, order ID, access token, etc.
+    const path = url.pathname.split('/').map(part => sensitive(part) ? ':redacted' : part);
+    url.pathname = path.join('/');
+    const campaign = new URLSearchParams();
+    for (const name of ['utm_source', 'utm_medium', 'utm_campaign']) {
+      const value = url.searchParams.get(name);
+      if (value && /^[A-Za-z0-9_.~-]{1,100}$/.test(value) && !sensitive(value)) {
+        campaign.set(name, value);
+      }
+    }
+    url.search = campaign.toString();
+    url.hash = '';
+    return url.toString();
+  };
+  const minimizedReferrer = () => {
+    try {
+      const referrer = new URL(document.referrer);
+      return ['http:', 'https:'].includes(referrer.protocol) ? referrer.origin : '';
+    } catch (_) { return ''; }
+  };
   const event = (type, name = '', properties = {}) => {
     if (isOptedOut()) return;
+    const url = minimizedPageUrl();
+    if (!url) return;
     const data = JSON.stringify({site_id: siteId, type, name, properties,
-      url: location.href, referrer: document.referrer});
+      url, referrer: minimizedReferrer()});
     if (navigator.sendBeacon) {
       navigator.sendBeacon(endpoint, new Blob([data], {type: 'text/plain'}));
     } else {
@@ -40,8 +82,9 @@
   });
   let previousPage = '';
   const page = () => {
-    if (location.href === previousPage) return;
-    previousPage = location.href;
+    const url = minimizedPageUrl();
+    if (!url || url === previousPage) return;
+    previousPage = url;
     event('pageview');
   };
   page();
