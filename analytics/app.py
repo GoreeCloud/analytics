@@ -154,6 +154,16 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
                     raise HTTPException(404, "Unknown site")
         return principal
 
+    def enforce_write_permission(db, principal: VerifiedPrincipal | None,
+                                 site_id: str, permission: str):
+        # Recheck the exact stored grant under SQLite's writer lock.
+        # A revocation committed before that transaction must win.
+        if principal is not None and not has_site_permission(
+            db, site_id=site_id, trusted_tenant_id=principal.tenant_id,
+            trusted_subject_id=principal.subject_id, permission=permission
+        ):
+            raise HTTPException(404, "Unknown site")
+
     def get_site(db, site_id: str):
         site = db.execute("SELECT * FROM sites WHERE id = ?", (site_id,)).fetchone()
         if site is None:
@@ -244,7 +254,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def verify_domain(site_id: str, payload: DomainVerify,
                       authorization: str | None = Header(default=None)):
         """Require owner-controlled DNS TXT proof; never trust event Origin as proof."""
-        admin(authorization, site_id=site_id, permission="analytics:admin")
+        principal = admin(authorization, site_id=site_id, permission="analytics:admin")
         try:
             domain = normalize_domain(payload.domain)
         except ValueError as exc:
@@ -267,6 +277,8 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
         if not any(isinstance(x, str) and hmac.compare_digest(x, expected) for x in values):
             raise HTTPException(409, "DNS TXT challenge not found")
         with storage.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            enforce_write_permission(db, principal, site_id, "analytics:admin")
             updated = db.execute("UPDATE site_domains SET verified_at=?, challenge='' "
                                  "WHERE site_id=? AND domain=? AND challenge=? AND verified_at IS NULL",
                                  (iso(datetime.now(timezone.utc)), site_id, domain,
@@ -279,12 +291,14 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def revoke_domain(site_id: str, payload: DomainVerify,
                       authorization: str | None = Header(default=None)):
         """Stop intake for one hostname and rotate its DNS ownership challenge."""
-        admin(authorization, site_id=site_id, permission="analytics:admin")
+        principal = admin(authorization, site_id=site_id, permission="analytics:admin")
         try:
             domain = normalize_domain(payload.domain)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         with storage.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            enforce_write_permission(db, principal, site_id, "analytics:admin")
             get_site(db, site_id)
             exists = db.execute("SELECT 1 FROM site_domains WHERE site_id=? AND domain=?",
                                 (site_id, domain)).fetchone()
@@ -503,7 +517,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def create_goal(site_id: str, payload: GoalCreate,
                     authorization: str | None = Header(default=None)):
         """Register an exact-match event or sanitized page path as a goal."""
-        admin(authorization, site_id=site_id, permission="analytics:manage")
+        principal = admin(authorization, site_id=site_id, permission="analytics:manage")
         name = payload.name.strip()
         target = payload.target.strip()
         if not name:
@@ -516,6 +530,8 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
             raise HTTPException(422, "Invalid page goal target")
         goal_id = secrets.token_urlsafe(16)
         with storage.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            enforce_write_permission(db, principal, site_id, "analytics:manage")
             get_site(db, site_id)
             try:
                 db.execute("INSERT INTO goals(id,site_id,name,kind,target,created_at) VALUES(?,?,?,?,?,?)",

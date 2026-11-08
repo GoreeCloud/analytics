@@ -24,3 +24,8 @@ See [Identity integration requirements](IDENTITY-INTEGRATION.md) and [Security m
 ## DNS TXT challenge confidentiality
 
 In Identity mode, `GET /api/v1/sites` returns site and verification **status** only to principals with explicit `analytics:read` rights. Pending `record_value` DNS ownership secrets are suppressed (`null`) unless the same authenticated principal also holds `analytics:admin` for that exact site and independently persisted tenant. Legacy local development mode retains its shared administrator-only response. Unknown or unassigned sites remain hidden. This limits read-only dashboard and analytics users' visibility into control-plane challenges; it does not replace DNS control, credential protection, or a separately vetted signed-token verifier.
+
+
+## Concurrent permission revocation and control-plane writes
+
+Identity-mode site mutations (goal creation, DNS TXT verification completion, and DNS proof revocation) recheck the **exact site/tenant/subject/action grant inside the SQLite `BEGIN IMMEDIATE` write transaction**. A grant revoked and committed before that transaction prevents the write, even if the request authenticated earlier. Writes committed before a concurrent revocation acquires the SQLite writer lock remain historical changes and are not automatically undone. Read-only requests can finish if authorization is revoked after their initial check. Operator-run offline permission revocation still requires stopped writers and a verified backup; this guard is additional defense, not OAuth token/session revocation.

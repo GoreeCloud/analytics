@@ -159,3 +159,44 @@ def test_pending_dns_challenges_are_admin_only_even_with_read_permission(api):
     assert admin_proof['record_value'] == 'goreecloud-analytics-verification=not-a-public-challenge'
     # Export-only principals cannot list a site or any TXT secret.
     assert client.get('/api/v1/sites', headers=headers('bob')).json() == []
+
+
+def test_dns_verification_rechecks_admin_grant_after_dns_lookup(api):
+    client, settings = api
+    with sqlite3.connect(settings.database) as db:
+        db.execute("UPDATE site_domains SET challenge=?, verified_at=NULL "
+                   "WHERE site_id='alpha'", ("pending-check",))
+    def revoke_between_checks(_):
+        with sqlite3.connect(settings.database) as db:
+            db.execute("DELETE FROM site_permissions WHERE site_id=? AND "
+                       "subject_id=? AND permission=?", ("alpha", "charlie", "analytics:admin"))
+        return ["goreecloud-analytics-verification=pending-check"]
+    client.app.state.txt_lookup = revoke_between_checks
+    result = client.post('/api/v1/sites/alpha/domains/verify',
+                         headers=headers('charlie'), json={'domain': 'alpha.example.com'})
+    assert result.status_code == 404 and result.json()['detail'] == 'Unknown site'
+    with sqlite3.connect(settings.database) as db:
+        assert db.execute("SELECT verified_at FROM site_domains WHERE site_id='alpha'").fetchone()[0] is None
+
+
+def test_goal_write_rechecks_grant_inside_write_transaction(api, monkeypatch):
+    from contextlib import contextmanager
+    client, settings = api
+    original = client.app.state.storage.connect
+    calls = 0
+    @contextmanager
+    def interleave_revocation():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            with sqlite3.connect(settings.database) as db:
+                db.execute("DELETE FROM site_permissions WHERE site_id=? AND "
+                           "subject_id=? AND permission=?", ("alpha", "alice", "analytics:manage"))
+        with original() as db:
+            yield db
+    monkeypatch.setattr(client.app.state.storage, 'connect', interleave_revocation)
+    result = client.post('/api/v1/sites/alpha/goals', headers=headers('alice'),
+                         json={'name': 'sensitive-goal', 'kind': 'event', 'target': 'signup'})
+    assert result.status_code == 404 and result.json()['detail'] == 'Unknown site'
+    with sqlite3.connect(settings.database) as db:
+        assert db.execute("SELECT COUNT(*) FROM goals WHERE site_id='alpha'").fetchone()[0] == 0
