@@ -84,6 +84,24 @@ CREATE INDEX IF NOT EXISTS ix_site_permissions_subject ON site_permissions(subje
 """
 
 
+def _require_safe_database_file(target: Path) -> None:
+    """Validate the file we will open, including after a creation race."""
+    if target.is_symlink():
+        raise ValueError("Database path cannot be a symbolic link")
+    try:
+        metadata = target.lstat()
+    except FileNotFoundError:
+        raise ValueError("Database path disappeared during startup") from None
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError("Database path must be a regular file")
+    if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise PermissionError(
+            "Existing database is accessible to group/others; "
+            "restrict it to owner-only permissions (chmod 600) "
+            "after reviewing file ownership and backups"
+        )
+
+
 class Storage:
     def __init__(self, path: str):
         self.path = path
@@ -91,21 +109,9 @@ class Storage:
         if path != ":memory:":
             target = Path(path)
             target.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-            if target.is_symlink():
-                raise ValueError("Database path cannot be a symbolic link")
-            if target.exists():
-                # Never open a FIFO, socket or directory as an analytics database.
-                # Prevent accidental disclosure of historical SQLite records by
-                # refusing existing files accessible to group or other users.
-                metadata = target.lstat()
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise ValueError("Database path must be a regular file")
-                if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
-                    raise PermissionError(
-                        "Existing database is accessible to group/others; "
-                        "restrict it to owner-only permissions (chmod 600) "
-                        "after reviewing file ownership and backups"
-                    )
+            if target.exists() or target.is_symlink():
+                # Refuse existing unsafe files before any SQLite connection.
+                _require_safe_database_file(target)
             # WAL / shared-memory / rollback-journal siblings can also carry
             # analytics data. Treat unexpected symlinks, special files and
             # permissive existing sidecars as startup blockers before SQLite
@@ -127,10 +133,16 @@ class Storage:
                 try:
                     fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
                 except FileExistsError:
-                    pass  # Another process won creation; it must finish setup first.
+                    # Another process won O_EXCL after the precheck. Crucially,
+                    # validate the race winner again before SQLite can open it.
+                    # Do not silently trust its permissions, type, or symlink.
+                    _require_safe_database_file(target)
                 else:
                     os.close(fd)
                     created = True
+            # A startup check is not a solution to malicious concurrent swaps,
+            # but does catch a raced file or symlink before opening SQLite.
+            _require_safe_database_file(target)
         with self.connect() as db:
             if created:
                 db.executescript(SCHEMA)
