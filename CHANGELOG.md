@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — backup-gated site deletion
+
+- Add manual, exact-confirmation, verified-backup-gated SQLite site deletion with read-only preview, transactionally isolated multi-site records, and schema integrity checks.
+- Verify backup preservation, failure on concurrent database changes, unaffected sites, and refusal of unknown IDs, missing confirmation and overwrites.
+- Document that this is not individual visitor erasure; deleted data persists in backups until those copies expire under policy.
+
+
 ## Unreleased — explicit offline SQLite upgrade safety
 
 - Added a schema version 1 marker for new databases, fail-closed startup on unversioned/unknown existing databases, read-only preflight, and a manual v0-to-v1 migration with an exclusive verified pre-upgrade backup. Legacy hostnames are never auto-trusted. This is development-only and intentionally requires a planned maintenance window.
