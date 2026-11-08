@@ -23,6 +23,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .config import Settings
+from .auth import IdentityVerifier, VerifiedPrincipal
+from .ownership import has_site_permission
 from .privacy import EVENT_RE, anonymize, normalize_domain, normalized_event, safe_path
 from .storage import Storage
 from .verification import DNSLookupUnavailable, read_txt_records, txt_record_name, txt_record_value
@@ -82,8 +84,15 @@ class SingleNodeLimiter:
             return count <= self.limit
 
 
-def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], list[str]] | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], list[str]] | None = None,
+               identity_verifier: IdentityVerifier | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    if settings.auth_mode not in ("legacy", "identity"):
+        raise RuntimeError("Unknown authorization mode")
+    if settings.auth_mode == "identity" and not callable(identity_verifier):
+        raise RuntimeError("Identity mode requires a trusted signed-token verifier")
+    if settings.auth_mode == "legacy" and identity_verifier is not None:
+        raise RuntimeError("Do not attach an Identity verifier in legacy mode")
     storage = Storage(settings.database)
     limiter = SingleNodeLimiter()
     ip_limiter = SingleNodeLimiter(limit=600)
@@ -114,11 +123,36 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
         )
         return result
 
-    def admin(authorization: str | None):
+    def admin(authorization: str | None, *, site_id: str | None = None,
+              permission: str = "analytics:read") -> VerifiedPrincipal | None:
         prefix = "Bearer "
         candidate = authorization[len(prefix):] if authorization and authorization.startswith(prefix) else ""
-        if not hmac.compare_digest(candidate, settings.admin_token):
+        if (not candidate or len(candidate) > 16384 or
+                any(ord(char) < 33 or ord(char) > 126 for char in candidate)):
             raise HTTPException(401, "Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+        if settings.auth_mode == "legacy":
+            if not hmac.compare_digest(candidate, settings.admin_token):
+                raise HTTPException(401, "Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+            return None
+        # Identity mode never accepts the legacy admin token as a bypass.
+        # The host adapter, once approved, MUST verify signature, pinned
+        # issuer, audience, client, scopes, token lifetime/class and tenant.
+        if hmac.compare_digest(candidate, settings.admin_token):
+            raise HTTPException(401, "Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+        try:
+            principal = identity_verifier(candidate)
+        except Exception:
+            raise HTTPException(401, "Unauthorized", headers={"WWW-Authenticate": "Bearer"}) from None
+        if type(principal) is not VerifiedPrincipal:
+            raise HTTPException(401, "Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+        if site_id is not None:
+            with storage.connect() as db:
+                if not has_site_permission(db, site_id=site_id,
+                                           trusted_tenant_id=principal.tenant_id,
+                                           trusted_subject_id=principal.subject_id,
+                                           permission=permission):
+                    raise HTTPException(404, "Unknown site")
+        return principal
 
     def get_site(db, site_id: str):
         site = db.execute("SELECT * FROM sites WHERE id = ?", (site_id,)).fetchone()
@@ -151,15 +185,29 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
 
     @app.get("/api/v1/sites")
     def sites(authorization: str | None = Header(default=None)):
-        admin(authorization)
+        principal = admin(authorization)
         with storage.connect() as db:
+            if principal is None:
+                rows = db.execute("SELECT * FROM sites ORDER BY name")
+            else:
+                # Site and TXT challenge metadata must never leak across tenants.
+                rows = db.execute(
+                    "SELECT s.* FROM sites s JOIN site_owners o ON o.site_id=s.id "
+                    "JOIN site_permissions p ON p.site_id=s.id "
+                    "WHERE o.tenant_id=? AND p.subject_id=? "
+                    "AND p.permission='analytics:read' ORDER BY s.name",
+                    (principal.tenant_id, principal.subject_id))
             return [{"id": s["id"], "name": s["name"], "domains": json.loads(s["domains"]),
                      "created_at": s["created_at"], "verification": domain_status(db, s["id"])}
-                    for s in db.execute("SELECT * FROM sites ORDER BY name")]
+                    for s in rows]
 
     @app.post("/api/v1/sites", status_code=201)
     def new_site(payload: SiteCreate, authorization: str | None = Header(default=None)):
         admin(authorization)
+        if settings.auth_mode == "identity":
+            # There is not yet an independently approved ownership-onboarding
+            # workflow. Never auto-claim a newly created site from token claims.
+            raise HTTPException(403, "Identity site onboarding is not yet implemented")
         try:
             domains = sorted({normalize_domain(x) for x in payload.domains})
         except ValueError as exc:
@@ -184,7 +232,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def verify_domain(site_id: str, payload: DomainVerify,
                       authorization: str | None = Header(default=None)):
         """Require owner-controlled DNS TXT proof; never trust event Origin as proof."""
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:admin")
         try:
             domain = normalize_domain(payload.domain)
         except ValueError as exc:
@@ -219,7 +267,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def revoke_domain(site_id: str, payload: DomainVerify,
                       authorization: str | None = Header(default=None)):
         """Stop intake for one hostname and rotate its DNS ownership challenge."""
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:admin")
         try:
             domain = normalize_domain(payload.domain)
         except ValueError as exc:
@@ -367,7 +415,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     @app.get("/api/v1/sites/{site_id}/summary")
     def summary(site_id: str, start: str | None = None, end: str | None = None,
                 authorization: str | None = Header(default=None)):
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:read")
         low, high = window(start, end)
         with storage.connect() as db:
             get_site(db, site_id)
@@ -403,7 +451,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     @app.get("/api/v1/sites/{site_id}/timeseries")
     def timeseries(site_id: str, start: str | None = None, end: str | None = None,
                    authorization: str | None = Header(default=None)):
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:read")
         low, high = window(start, end)
         with storage.connect() as db:
             get_site(db, site_id)
@@ -425,7 +473,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     @app.get("/api/v1/sites/{site_id}/breakdown")
     def breakdown(site_id: str, dimension: str = "path", start: str | None = None,
                   end: str | None = None, authorization: str | None = Header(default=None)):
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:read")
         if dimension not in ("path", "referrer", "name", "utm_source", "utm_medium", "utm_campaign"):
             raise HTTPException(422, "Unsupported dimension")
         low, high = window(start, end)
@@ -443,7 +491,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def create_goal(site_id: str, payload: GoalCreate,
                     authorization: str | None = Header(default=None)):
         """Register an exact-match event or sanitized page path as a goal."""
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:manage")
         name = payload.name.strip()
         target = payload.target.strip()
         if not name:
@@ -469,7 +517,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     def goals(site_id: str, start: str | None = None, end: str | None = None,
               authorization: str | None = Header(default=None)):
         """Count sessions meeting each goal once within the selected date range."""
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:read")
         low, high = window(start, end)
         with storage.connect() as db:
             get_site(db, site_id)
@@ -490,7 +538,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
 
     @app.get("/api/v1/sites/{site_id}/realtime")
     def realtime(site_id: str, authorization: str | None = Header(default=None)):
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:read")
         with storage.connect() as db:
             get_site(db, site_id)
             rows = db.execute("SELECT COUNT(*) AS events, COUNT(DISTINCT visitor_hash) AS visitors "
@@ -503,7 +551,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
                         start: str | None = None, end: str | None = None,
                         authorization: str | None = Header(default=None)):
         """Initial ordered two-event funnel within one visit (no attribution inferred)."""
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:read")
         if not first or not second or len(first) > 80 or len(second) > 80:
             raise HTTPException(422, "Provide two valid event names")
         low, high = window(start, end)
@@ -546,7 +594,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
     @app.get("/api/v1/sites/{site_id}/export.csv")
     def export(site_id: str, start: str | None = None, end: str | None = None,
                authorization: str | None = Header(default=None)):
-        admin(authorization)
+        admin(authorization, site_id=site_id, permission="analytics:export")
         low, high = window(start, end)
         with storage.connect() as db:
             get_site(db, site_id)

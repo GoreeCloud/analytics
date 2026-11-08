@@ -6,6 +6,10 @@ GoreeCloud Analytics is an original, small analytics service for the GoreeCloud 
 
 > **Maturity:** early development. Not production-ready or deployed. Session replay, heatmaps, ecommerce integrations, federated SSO, advanced funnels/cohorts, MCP, AI, multi-tenancy, distributed ingestion, and PostgreSQL are **not yet implemented**.
 
+## Identity-mode authorization (development seam only)
+
+The existing shared admin token remains **legacy private-development access**, not production authentication. An optional identity authorization mode is now available only when the trusted host injects a separately reviewed signed-access-token verifier. The default app factory has **no verifier**; setting `GC_ANALYTICS_AUTH_MODE=identity` alone fails startup rather than enabling unsafe access. This mode checks exact v2 site/tenant/subject/action permission rows, filters site lists, and rejects the legacy admin token. **No live JWT verifier, browser login, production SSO or public rollout is established.** See [Identity API Gate](docs/IDENTITY-API-GATE.md).
+
 ## Quick start (local development)
 
 Requires **Python 3.11+**. Use a dedicated virtual environment:

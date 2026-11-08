@@ -8,6 +8,7 @@ class Settings:
     admin_token: str
     hash_secret: str
     database: str
+    auth_mode: str = "legacy"  # identity requires a separately trusted host verifier
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -18,5 +19,9 @@ class Settings:
                 "Set distinct random GC_ANALYTICS_ADMIN_TOKEN and "
                 "GC_ANALYTICS_HASH_SECRET (at least 32 characters each)."
             )
+        mode = os.getenv("GC_ANALYTICS_AUTH_MODE", "legacy")
+        if mode not in ("legacy", "identity"):
+            raise RuntimeError("Unknown GC_ANALYTICS_AUTH_MODE; choose legacy or identity")
         return cls(admin_token=admin, hash_secret=secret,
-                   database=os.getenv("GC_ANALYTICS_DATABASE", "./analytics.sqlite3"))
+                   database=os.getenv("GC_ANALYTICS_DATABASE", "./analytics.sqlite3"),
+                   auth_mode=mode)
