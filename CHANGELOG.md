@@ -2,6 +2,10 @@
 
 ## Unreleased — SQLite v2 independent site ownership foundation
 
+- Add the offline first-owner binding command with explicit site/tenant confirmation,
+  verified exclusive backup, exact subject/action permission allowlist and race
+  checks. Reassignment, credential verification and live RBAC remain unimplemented.
+
 - Added empty operator-owned `site_owners` and subject/action `site_permissions`
   tables with fail-closed structural audits. No site is claimed by an arbitrary
   login, DNS owner, shared admin token or unverified tenant claim.
