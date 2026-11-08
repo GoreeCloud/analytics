@@ -56,6 +56,12 @@ window.goreecloudAnalytics.track('signup', {plan: 'free'});
 
 An element with `data-gc-event="signup"` also produces a custom event when clicked. Do not send names, email addresses, access tokens, or sensitive information as event properties.
 
+### Revoke a hostname's verification (administrative recovery)
+
+An authenticated administrator can disable a registered hostname's ingestion using `POST /api/v1/sites/{site_id}/domains/revoke` with JSON `{"domain":"example.com"}`. This rotates that hostname's DNS challenge and clears its verified status without deleting historical data. Collection returns HTTP 403 until the **new** challenge is published and verified.
+
+**This intentionally interrupts collection.** Use it only for a known DNS ownership or trust concern; the dashboard does not expose a revoke button. Automatic periodic re-verification, ownership-transfer detection, and tenant-scoped credentials remain outstanding.
+
 ### Saved conversion goals
 
 After registering a site, use the dashboard's **Conversion goals** form to create an exact-match pageview goal such as `/pricing` or event goal such as `signup`. The goal report counts each converting visit at most once in the selected date window. Administrator-authenticated API endpoints are `POST /api/v1/sites/{site_id}/goals` and `GET /api/v1/sites/{site_id}/goals`. Goal rates use visits with any tracked activity as the denominator; they are **not** user-level conversion rates or revenue attribution.
