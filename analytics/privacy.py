@@ -2,6 +2,7 @@
 import math
 import hashlib
 import hmac
+import ipaddress
 import json
 import re
 from datetime import datetime, timezone
@@ -12,6 +13,31 @@ from fastapi import HTTPException
 DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.I)
 EVENT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,79}$")
 PROP_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,39}$")
+
+# Block selected high-risk personal identifiers in event values and paths.
+# These narrow rules reduce accidental collection; they are not a general PII audit.
+SSN_RE = re.compile(r"(?<!\d)\d{3}[- ]\d{2}[- ]\d{4}(?!\d)")
+IPV4_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+PHONE_RE = re.compile(r"(?<!\w)(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}(?!\w)")
+
+
+def contains_high_risk_identifier(value: str) -> bool:
+    """Recognize selected formatted identifiers after bounded URL decoding."""
+    decoded = decode_for_privacy(value)
+    if SSN_RE.search(decoded) or PHONE_RE.search(decoded):
+        return True
+    if IPV4_RE.search(decoded):
+        for candidate in IPV4_RE.findall(decoded):
+            try:
+                if isinstance(ipaddress.ip_address(candidate), ipaddress.IPv4Address):
+                    return True
+            except ValueError:
+                continue
+    try:
+        return isinstance(ipaddress.ip_address(decoded), ipaddress.IPv6Address)
+    except ValueError:
+        return False
+
 
 
 def normalize_domain(value: str) -> str:
@@ -46,7 +72,8 @@ def safe_path(path: str) -> str:
         if ("@" in decoded or len(decoded) > 32 or
             re.search(r"[0-9]{5,}", lower) or
             re.search(r"(?:bearer|secret|token|apikey|accesskey|password)[_=-]", lower) or
-            re.fullmatch(r"[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", lower)):
+            re.fullmatch(r"[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", lower) or
+            contains_high_risk_identifier(decoded)):
             result.append(":redacted")
         else:
             result.append(segment)
@@ -92,7 +119,8 @@ def normalized_event(payload: dict, allowed_domains: list[str]) -> dict:
             privacy_scan = decode_for_privacy(val)
             if ("@" in privacy_scan or
                 re.search(r"\b(?:bearer\s|sk-[A-Za-z0-9]|[0-9]{13,19}\b)",
-                          privacy_scan, re.I)):
+                          privacy_scan, re.I) or
+                contains_high_risk_identifier(privacy_scan)):
                 raise HTTPException(400, "Sensitive event property value")
         safe_props[key] = val
     if len(json.dumps(safe_props)) > 2048:
@@ -100,7 +128,9 @@ def normalized_event(payload: dict, allowed_domains: list[str]) -> dict:
     qs = parse_qs(parsed.query)
     def utm(key):
         s = qs.get(key, [""])[0]
-        if not isinstance(s, str) or not re.fullmatch(r"[A-Za-z0-9_.~-]{1,100}", s):
+        if (not isinstance(s, str) or
+                not re.fullmatch(r"[A-Za-z0-9_.~-]{1,100}", s) or
+                contains_high_risk_identifier(s)):
             return ""
         return s
     referrer = payload.get("referrer", "")
