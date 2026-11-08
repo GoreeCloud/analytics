@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — explicit offline SQLite upgrade safety
+
+- Added a schema version 1 marker for new databases, fail-closed startup on unversioned/unknown existing databases, read-only preflight, and a manual v0-to-v1 migration with an exclusive verified pre-upgrade backup. Legacy hostnames are never auto-trusted. This is development-only and intentionally requires a planned maintenance window.
+
 ## Unreleased — DNS ownership proof and revocation (source development)
 
 - Added per-host pending DNS TXT challenge verification, bounded resolver calls, per-domain retry limits, and fail-closed collection until proof.

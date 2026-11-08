@@ -72,23 +72,33 @@ def test_domain_proof_is_host_specific(client):
     assert visit(client,site["id"],second["domain"]).status_code == 403
 
 
-def test_legacy_sites_migrate_pending_and_preserve_record(tmp_path):
-    path=tmp_path/"old.db"
+def test_legacy_registration_requires_explicit_backup_gated_upgrade(tmp_path):
+    from analytics.storage import Storage
+    from analytics.migrate import apply_migration
+    path=tmp_path / "legacy.sqlite3"
+    # Build a real complete schema, then emulate the pre-domain-verification
+    # layout. The new application must never mutate that legacy DB on start.
+    Storage(str(path))
     with sqlite3.connect(path) as db:
-        db.execute("CREATE TABLE sites (id TEXT PRIMARY KEY,name TEXT NOT NULL,domains TEXT NOT NULL,created_at TEXT NOT NULL)")
-        db.execute("INSERT INTO sites VALUES('old','Example',?, '2026-01-01')",
-                   (json.dumps(["example.com"]),))
+        db.execute("DROP TABLE site_domains")
+        db.execute("PRAGMA user_version=0")
+        db.execute("INSERT INTO sites VALUES ('old-site','Example',?, '2026-10-01')",
+                   (json.dumps(['example.com']),))
     settings=Settings(admin_token="a"*48,hash_secret="b"*48,database=str(path))
-    app=create_app(settings)
-    client=TestClient(app)
-    proof=client.get("/api/v1/sites",headers=auth()).json()[0]["verification"][0]
-    assert not proof["verified"]
-    assert visit(client,"old").status_code == 403
-    app.state.txt_lookup=lambda _: [proof["record_value"]]
-    assert client.post("/api/v1/sites/old/domains/verify",
-                       json={"domain":"example.com"},headers=auth()).status_code == 200
-    assert visit(client,"old").status_code == 202
-    assert TestClient(create_app(settings)).get("/api/v1/sites",headers=auth()).json()[0]["verification"][0]["verified"]
+    with pytest.raises(RuntimeError, match='unversioned'):
+        create_app(settings)
+    migrated=apply_migration(path, tmp_path/'pre-upgrade-backup.sqlite3')
+    assert migrated['mode']=='applied'
+    client=TestClient(create_app(settings))
+    proof=client.get('/api/v1/sites',headers=auth()).json()[0]['verification'][0]
+    assert proof['verified'] is False
+    assert visit(client,'old-site').status_code == 403
+    client.app.state.txt_lookup=lambda name: [proof['record_value']] if name==proof['record_name'] else []
+    assert client.post('/api/v1/sites/old-site/domains/verify',headers=auth(),
+                       json={'domain':'example.com'}).status_code == 200
+    assert visit(client,'old-site').status_code == 202
+    restarted=TestClient(create_app(settings))
+    assert restarted.get('/api/v1/sites',headers=auth()).json()[0]['verification'][0]['verified'] is True
 
 
 def test_dns_attempts_limited_and_resolver_errors_generic(client):

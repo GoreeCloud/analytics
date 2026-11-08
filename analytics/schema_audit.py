@@ -1,7 +1,8 @@
 """Non-mutating SQLite schema and integrity preflight for GoreeCloud Analytics.
 
-This is NOT a migration runner. Use a separate validated offline snapshot
-when the source database is active; concurrent writes affect live readback.
+This is NOT a migration runner. Use a separate validated snapshot for offline
+inspection if the source database is active, since concurrent writes can affect
+point-in-time results and SQLite read-only WAL clients may use a -shm file.
 """
 from __future__ import annotations
 
@@ -11,20 +12,21 @@ import json
 from pathlib import Path
 import sqlite3
 
-# The actual v0.1.2 development layout; earlier builds wrote user_version=0.
+# This list describes the actual v0.1.2 development schema. No schema version
+# was assigned by earlier builds; PRAGMA user_version=0 is expected for them.
 REQUIRED_COLUMNS = {
     "sites": {"id", "name", "domains", "created_at"},
     "site_domains": {"site_id", "domain", "challenge", "verified_at"},
     "sessions": {"id", "site_id", "visitor_hash", "first_seen", "last_seen", "event_count"},
     "events": {"id", "site_id", "session_id", "visitor_hash", "ts", "kind", "path",
-               "hostname", "referrer", "name", "properties", "ua_family",
-               "utm_source", "utm_medium", "utm_campaign"},
+               "hostname", "referrer", "name", "properties", "ua_family", "utm_source",
+               "utm_medium", "utm_campaign"},
     "goals": {"id", "site_id", "name", "kind", "target", "created_at"},
 }
 
 
 def inspect_schema(path: str | Path) -> dict:
-    """Read an existing database without creating it or changing its schema."""
+    """Read a database without creating it or changing its schema or data."""
     target = Path(path).expanduser().absolute()
     if target.is_symlink() or not target.is_file():
         raise ValueError("Database must be an existing regular file, not a symlink")
@@ -43,18 +45,23 @@ def inspect_schema(path: str | Path) -> dict:
             for table, columns in REQUIRED_COLUMNS.items():
                 if table not in tables:
                     continue
-                # Table names are hardcoded above, never request-derived.
+                # Table names are hardcoded above and never request-derived.
                 actual = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
                 absent = sorted(columns - actual)
                 if absent:
                     missing_columns[table] = absent
             invalid_fk = db.execute("PRAGMA foreign_key_check").fetchmany(1)
+            # No schema version is written or inferred. Older Analytics schemas
+            # are detected but are NEVER silently repaired by this audit.
             ready = not missing and not missing_columns and not invalid_fk
+            can_migrate = (version == 0 and not missing_columns and not invalid_fk
+                           and (not missing or missing == ["site_domains"]))
+            status = ("ready" if ready and version == 1 else
+                      "migration-required" if can_migrate else "review-required")
             return {
                 "database": str(target),
                 "user_version": version,
-                "status": "current-structure-unversioned" if ready and version == 0
-                          else "review-required",
+                "status": status,
                 "missing_tables": missing,
                 "missing_columns": missing_columns,
                 "foreign_key_violations_detected": bool(invalid_fk),
@@ -65,7 +72,7 @@ def inspect_schema(path: str | Path) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Read-only Analytics SQLite schema preflight")
+    parser = argparse.ArgumentParser(description="Read-only GoreeCloud Analytics SQLite schema preflight")
     parser.add_argument("--database", required=True, help="Existing SQLite database or verified backup")
     args = parser.parse_args()
     try:
@@ -73,7 +80,7 @@ def main() -> None:
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2, sort_keys=True))
-    if result["status"] != "current-structure-unversioned":
+    if result["status"] != "ready":
         raise SystemExit(2)
 
 
