@@ -308,6 +308,15 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
             # Serialize read/insert/update so simultaneous events cannot create
             # competing visits for the same anonymous visitor on this node.
             db.execute("BEGIN IMMEDIATE")
+            # Recheck hostname proof under the SQLite writer lock. A completed
+            # revocation between optimistic precheck and event commit must win.
+            current_proof = db.execute(
+                "SELECT 1 FROM site_domains WHERE site_id=? AND domain=? "
+                "AND verified_at IS NOT NULL",
+                (site_id, normalized["hostname"])
+            ).fetchone()
+            if current_proof is None:
+                raise HTTPException(403, "Domain ownership is not verified")
             last = db.execute(
                 "SELECT id FROM sessions WHERE site_id=? AND visitor_hash=? AND last_seen>=? "
                 "ORDER BY last_seen DESC LIMIT 1",
