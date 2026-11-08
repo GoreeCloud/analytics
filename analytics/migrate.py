@@ -52,7 +52,7 @@ def preview_migration(database: str | Path) -> dict:
                 raise ValueError("Invalid legacy domain registration; manual review required") from exc
     return {**report, "action": "apply-with-verified-backup",
             "target_version": TARGET_VERSION,
-            "all_domains_will_require_dns_reverification": True}
+            "newly_created_proofs_will_be_pending": True}
 
 
 def apply_migration(database: str | Path, backup_to: str | Path) -> dict:
@@ -92,7 +92,7 @@ def apply_migration(database: str | Path, backup_to: str | Path) -> dict:
     if result["status"] != "ready":
         raise RuntimeError("Post-migration integrity failed; preserve backup for recovery")
     return {**result, "mode": "applied", "backup": backup,
-            "all_domains_require_dns_reverification": True}
+            "newly_created_proofs_are_pending": True}
 
 
 def main() -> None:
