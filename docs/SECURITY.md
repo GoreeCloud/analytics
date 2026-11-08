@@ -17,6 +17,7 @@
 - Registered-host equality check and collection origin matching.
 - DNT and Global Privacy Control suppression; explicit first-party opt-out preference (no stored visitor identifier).
 - Daily HMAC visitor identifiers, no IP storage; path-segment masking for likely identities, including selected repeatedly URL-encoded email addresses. Event property values with decoded email-like identifiers are rejected.
+- Additional narrow safeguards reject selected formatted Social Security numbers, IPv4/IPv6 addresses and telephone-like identifiers in string event properties; matching path segments are redacted and sensitive UTM values omitted. These are heuristic patterns, **not comprehensive PII detection**. Legitimate non-personal labels resembling those patterns may be filtered.
 - Layered anonymous, network-HMAC and registered-site in-memory rate limits, single-node only.
 - Prepared SQL parameters; SQL column names selectable only from a hardcoded allowlist.
 - Fresh SQLite files are created with owner-only (0600) file permissions and symbolic-link database paths are rejected. Existing database file permissions must be reviewed manually.
