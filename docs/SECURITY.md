@@ -20,7 +20,7 @@
 - Additional narrow safeguards reject selected formatted Social Security numbers, IPv4/IPv6 addresses and telephone-like identifiers in string event properties; matching path segments are redacted and sensitive UTM values omitted. These are heuristic patterns, **not comprehensive PII detection**. Legitimate non-personal labels resembling those patterns may be filtered.
 - Layered anonymous, network-HMAC and registered-site in-memory rate limits, single-node only.
 - Prepared SQL parameters; SQL column names selectable only from a hardcoded allowlist.
-- Fresh SQLite files are created with owner-only (0600) file permissions and symbolic-link database paths are rejected. Existing database file permissions must be reviewed manually.
+- Fresh SQLite files are created with owner-only (0600) permissions. On POSIX systems startup also fails closed when an **existing** SQLite file is accessible by group/other users; nonregular files and symbolic-link database paths are rejected. Operators must carefully inspect owner, copies and backup permissions and restrict the existing database to owner-only mode before restarting.
 - No raw HTML injection from API data in dashboard (rendered through textContent/DOM APIs).
 - CSP, nosniff, frame protection, Referrer-Policy, browser-cache disabling.
 - CSV spreadsheet formula prefixing.

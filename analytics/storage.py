@@ -1,6 +1,7 @@
 """SQLite persistence for the single-node MVP; migration to Postgres is planned."""
 import sqlite3
 import os
+import stat
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -75,6 +76,19 @@ class Storage:
             target.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
             if target.is_symlink():
                 raise ValueError("Database path cannot be a symbolic link")
+            if target.exists():
+                # Never open a FIFO, socket or directory as an analytics database.
+                # Prevent accidental disclosure of historical SQLite records by
+                # refusing existing files accessible to group or other users.
+                metadata = target.lstat()
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise ValueError("Database path must be a regular file")
+                if os.name == "posix" and stat.S_IMODE(metadata.st_mode) & 0o077:
+                    raise PermissionError(
+                        "Existing database is accessible to group/others; "
+                        "restrict it to owner-only permissions (chmod 600) "
+                        "after reviewing file ownership and backups"
+                    )
             if not target.exists():
                 try:
                     fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
