@@ -83,3 +83,8 @@ configuration, TLS authentication, distributed rate limits, or a replacement
 for dedicated Wardveil network-edge limits. Long bearer tokens and requests
 with unusually large cookies may now receive 431 and should be diagnosed
 without weakening the production security boundary.
+
+
+## Additional numeric-identifier minimization (development)
+
+The collector also checks **numeric JSON property values**, not just strings, for unformatted high-risk identifiers. Nine-digit bare identifiers and unbroken sequences of 13 or more digits are now treated conservatively as sensitive; they are rejected in event names/properties, masked in path segments, and dropped from UTM campaign fields. This intentionally may filter innocuous large timestamps, order counts or campaign codes; product teams must use documented non-sensitive categories or an approved structured metric taxonomy instead of weakening the default. Privacy detection remains heuristic and cannot establish that all personal data is removed. The browser tracker and direct server API require independent validation.
