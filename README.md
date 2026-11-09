@@ -18,6 +18,10 @@ The existing shared admin token remains **legacy private-development access**, n
 
 The optional [offline recovery drill](docs/RECOVERY-DRILL.md) restores a verified SQLite v2 backup to a disposable owner-only folder, compares schema and all Analytics table rows, and cleans up without touching live data. This is a local test—not off-host recovery, encryption, or production disaster-recovery acceptance.
 
+## Backup-verified offline retention (development)
+
+Retention applies only after an exclusive verified SQLite snapshot and [exact full-database content check under the writer lock](docs/RETENTION-SNAPSHOT.md). Offline writers must still be stopped; backup expiry, live privacy operations and off-host recovery remain open.
+
 ## Quick start (local development)
 
 Requires **Python 3.11+**. Use a dedicated virtual environment:
