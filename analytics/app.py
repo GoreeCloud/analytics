@@ -16,7 +16,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Callable
 from threading import Lock
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -25,6 +24,7 @@ from pydantic import BaseModel, Field
 from .config import Settings
 from .auth import IdentityVerifier, VerifiedPrincipal
 from .ownership import has_site_permission
+from .origin import valid_serialized_origin
 from .privacy import EVENT_RE, anonymize, normalize_domain, normalized_event, safe_path
 from .storage import Storage
 from .verification import DNSLookupUnavailable, read_txt_records, txt_record_name, txt_record_value
@@ -379,16 +379,8 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
             if proved is None:
                 raise HTTPException(403, "Domain ownership is not verified")
             origin = request.headers.get("origin")
-            if origin:
-                try:
-                    parsed_origin = urlparse(origin)
-                    valid_origin = (parsed_origin.scheme in ("http", "https") and
-                                    parsed_origin.hostname == normalized["hostname"] and
-                                    not parsed_origin.username and not parsed_origin.password)
-                except ValueError:
-                    valid_origin = False
-                if not valid_origin:
-                    raise HTTPException(403, "Origin mismatch")
+            if origin and not valid_serialized_origin(origin, normalized["hostname"]):
+                raise HTTPException(403, "Origin mismatch")
             # Rate-limit valid intake by anonymous session, client network and
             # registered website. All client-IP-derived keys are HMACs in memory
             # only; no IP address is stored in the database or log.
