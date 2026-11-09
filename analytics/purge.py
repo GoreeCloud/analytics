@@ -6,6 +6,7 @@ itself. It does not implement per-visitor data-subject identification/deletion.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from contextlib import closing
 import json
 from pathlib import Path
@@ -45,6 +46,38 @@ def _all_counts(db: sqlite3.Connection) -> dict[str, int]:
             for table in TABLES}
 
 
+def _fingerprint(db: sqlite3.Connection, *, exclude_site: str | None = None) -> str:
+    """Hash exact SQLite row contents, not only counts, without materializing rows.
+
+    Called on a verified backup and again under an active SQLite writer lock.
+    Table/column names come exclusively from the static TABLES allowlist.
+    """
+    digest = hashlib.sha256()
+    for table in TABLES:
+        digest.update(("table:" + table + "\n").encode())
+        key = "id" if table == "sites" else "site_id"
+        where = f" WHERE {key} != ?" if exclude_site is not None else ""
+        args = (exclude_site,) if exclude_site is not None else ()
+        for row in db.execute(f"SELECT * FROM {table}{where} ORDER BY rowid", args):
+            typed = []
+            for value in row:
+                if value is None:
+                    typed.append(["null", None])
+                elif isinstance(value, bytes):
+                    typed.append(["blob", value.hex()])
+                elif type(value) is int:
+                    typed.append(["integer", value])
+                elif type(value) is float:
+                    typed.append(["real", repr(value)])
+                elif type(value) is str:
+                    typed.append(["text", value])
+                else:
+                    raise ValueError("Unsupported SQLite value in deletion preflight")
+            digest.update(json.dumps(typed, separators=(",", ":"), ensure_ascii=True).encode())
+            digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def preview_purge(database: str | Path, site_id: str) -> dict:
     """Read-only preview: no schema change or backup creation."""
     if not isinstance(site_id, str) or not (1 <= len(site_id) <= 100):
@@ -62,8 +95,8 @@ def apply_purge(database: str | Path, site_id: str, backup_to: str | Path,
                 confirmation: str) -> dict:
     """Delete one site atomically only after an exclusive verified backup.
 
-    Operators must stop other SQLite writers. Snapshot/live count comparisons
-    detect common concurrency races, but do not prove a service is stopped.
+    Operators must stop other SQLite writers. Exact content hashes under the
+    writer lock detect same-count mutations, but cannot prove services stopped.
     """
     plan = preview_purge(database, site_id)
     if confirmation != site_id:
@@ -74,6 +107,8 @@ def apply_purge(database: str | Path, site_id: str, backup_to: str | Path,
     with closing(_connect_readonly(backup_path)) as snapshot:
         snapshot_site = _site_counts(snapshot, site_id)
         snapshot_totals = _all_counts(snapshot)
+        snapshot_fingerprint = _fingerprint(snapshot)
+        unaffected_fingerprint = _fingerprint(snapshot, exclude_site=site_id)
     if snapshot_site != plan["deletion_counts"]:
         raise RuntimeError("Site changed during backup; no data deleted")
     with closing(sqlite3.connect(path, timeout=10)) as db:
@@ -82,8 +117,9 @@ def apply_purge(database: str | Path, site_id: str, backup_to: str | Path,
             db.execute("BEGIN IMMEDIATE")
             # Fail closed on interleaved writes since backup; retain the backup.
             if (_site_counts(db, site_id) != snapshot_site or
-                    _all_counts(db) != snapshot_totals):
-                raise RuntimeError("Database changed since backup; no data deleted")
+                    _all_counts(db) != snapshot_totals or
+                    _fingerprint(db) != snapshot_fingerprint):
+                raise RuntimeError("Database contents changed since backup; no data deleted")
             deleted = db.execute("DELETE FROM sites WHERE id=?", (site_id,))
             if deleted.rowcount != 1 or _site_counts(db, site_id) is not None:
                 raise RuntimeError("Site deletion could not be verified")
@@ -91,6 +127,8 @@ def apply_purge(database: str | Path, site_id: str, backup_to: str | Path,
             for table in TABLES:
                 if remaining[table] != snapshot_totals[table] - snapshot_site[table]:
                     raise RuntimeError("Site-dependent records were not fully deleted")
+            if _fingerprint(db, exclude_site=site_id) != unaffected_fingerprint:
+                raise RuntimeError("Unrelated site records changed; deletion rolled back")
             if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise RuntimeError("Deletion would violate database foreign keys")
             db.commit()
