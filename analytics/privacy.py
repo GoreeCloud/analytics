@@ -19,12 +19,17 @@ PROP_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,39}$")
 SSN_RE = re.compile(r"(?<!\d)\d{3}[- ]\d{2}[- ]\d{4}(?!\d)")
 IPV4_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 PHONE_RE = re.compile(r"(?<!\w)(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}(?!\w)")
+# Conservative, form-independent protection for unformatted identifiers.
+# Tradeoff: this can also omit legitimate 9- and 13+-digit metric labels.
+BARE_SSN_RE = re.compile(r"(?<!\d)\d{9}(?!\d)")
+LONG_NUMERIC_ID_RE = re.compile(r"(?<!\d)\d{13,}(?!\d)")
 
 
 def contains_high_risk_identifier(value: str) -> bool:
     """Recognize selected formatted identifiers after bounded URL decoding."""
     decoded = decode_for_privacy(value)
-    if SSN_RE.search(decoded) or PHONE_RE.search(decoded):
+    if (SSN_RE.search(decoded) or PHONE_RE.search(decoded)
+            or BARE_SSN_RE.search(decoded) or LONG_NUMERIC_ID_RE.search(decoded)):
         return True
     if IPV4_RE.search(decoded):
         for candidate in IPV4_RE.findall(decoded):
@@ -106,6 +111,8 @@ def normalized_event(payload: dict, allowed_domains: list[str]) -> dict:
         raise HTTPException(400, "Invalid event name")
     if kind == "pageview":
         name = ""
+    elif contains_high_risk_identifier(name):
+        raise HTTPException(400, "Sensitive event name")
     props = payload.get("properties", {})
     if not isinstance(props, dict) or len(props) > 20:
         raise HTTPException(400, "properties must be an object with 20 or fewer entries")
@@ -115,8 +122,8 @@ def normalized_event(payload: dict, allowed_domains: list[str]) -> dict:
             raise HTTPException(400, "Disallowed event property key")
         if type(val) not in (str, bool, int, float) or (type(val) is float and not math.isfinite(val)) or len(str(val)) > 160:
             raise HTTPException(400, "Disallowed event property value")
-        if isinstance(val, str):
-            privacy_scan = decode_for_privacy(val)
+        if type(val) in (str, int, float):
+            privacy_scan = decode_for_privacy(str(val))
             if ("@" in privacy_scan or
                 re.search(r"\b(?:bearer\s|sk-[A-Za-z0-9]|[0-9]{13,19}\b)",
                           privacy_scan, re.I) or
