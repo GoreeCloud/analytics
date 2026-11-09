@@ -108,6 +108,12 @@ def backup_database(source: str | Path, destination: str | Path) -> dict:
             pass  # Not all filesystems allow fsync on directories.
         return {"destination": str(target), **result}
     finally:
+        # SQLite may create WAL/SHM/journal sidecars while opening a WAL-mode
+        # snapshot for verification. Failed verification must not leave these
+        # potentially sensitive temporary files behind in the backup folder.
+        # This prefix belongs to this exclusive mkstemp-created snapshot.
+        for suffix in ("-wal", "-shm", "-journal"):
+            Path(str(temp) + suffix).unlink(missing_ok=True)
         temp.unlink(missing_ok=True)
 
 
