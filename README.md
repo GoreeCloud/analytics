@@ -14,6 +14,10 @@ A preview-first [permission-revocation command](docs/PERMISSION-REVOCATION.md) c
 
 The existing shared admin token remains **legacy private-development access**, not production authentication. An optional identity authorization mode is now available only when the trusted host injects a separately reviewed signed-access-token verifier. The default app factory has **no verifier**; setting `GC_ANALYTICS_AUTH_MODE=identity` alone fails startup rather than enabling unsafe access. This mode checks exact v2 site/tenant/subject/action permission rows, filters site lists, and rejects the legacy admin token. **No live JWT verifier, browser login, production SSO or public rollout is established.** See [Identity API Gate](docs/IDENTITY-API-GATE.md).
 
+## Non-destructive backup recovery drill (development)
+
+The optional [offline recovery drill](docs/RECOVERY-DRILL.md) restores a verified SQLite v2 backup to a disposable owner-only folder, compares schema and all Analytics table rows, and cleans up without touching live data. This is a local test—not off-host recovery, encryption, or production disaster-recovery acceptance.
+
 ## Quick start (local development)
 
 Requires **Python 3.11+**. Use a dedicated virtual environment:
