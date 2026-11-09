@@ -15,6 +15,8 @@ import stat
 import tempfile
 from pathlib import Path
 
+from .schema_audit import inspect_schema
+
 REQUIRED_TABLES = frozenset({"sites", "sessions", "events", "goals"})
 
 
@@ -43,8 +45,18 @@ def verify_backup(path: str | Path) -> dict:
             )}
             if not REQUIRED_TABLES.issubset(tables):
                 raise ValueError("Database does not contain the Analytics schema")
+            if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                raise ValueError("Database contains orphaned foreign-key records")
+            # Integrity alone does not mean the data can be recovered safely.
+            # Accept only a ready v2 layout or a structurally recognized
+            # v0/v1 layout that the explicit migration utility can upgrade.
+            audit = inspect_schema(db_file)
+            if audit["status"] not in ("ready", "migration-required"):
+                raise ValueError("Database schema is unrecognized or inconsistent")
             return {
                 "status": "verified",
+                "schema_status": audit["status"],
+                "user_version": audit["user_version"],
                 "sites": db.execute("SELECT COUNT(*) FROM sites").fetchone()[0],
                 "sessions": db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0],
                 "events": db.execute("SELECT COUNT(*) FROM events").fetchone()[0],

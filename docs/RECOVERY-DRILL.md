@@ -17,3 +17,10 @@ It creates a disposable private subdirectory, restores the snapshot through the 
 Source backups and live databases are not modified or switched by this tool. Carefully monitor actual filesystem permissions, available disk space and operator-controlled encryption. A passing isolated drill does not prove that remote storage, secrets, key recovery, DNS, deployment configuration, RPO/RTO, availability, and actual operator rollback will work. Schedule restore exercises on authorized protected infrastructure only after formal planning. Do not upload backups to GitHub or public channels.
 
 See [Security](SECURITY.md), [Migration](MIGRATION.md) and the existing `python -m analytics.backup` CLI.
+
+
+## Backup verification and schema compatibility
+
+The standalone `analytics.backup` verifier also runs a full SQLite integrity check, rejects orphaned foreign-key records, and refuses structurally unrecognized SQLite layouts. A verified snapshot must be either a ready SQLite v2 database or a specifically recognized older v0/v1 layout eligible for explicit offline migration; the result now reports `user_version` and `schema_status`. Known legacy snapshots remain eligible for backup and later guarded migration. A snapshot with an unknown schema or inconsistent relationships is **not** labeled verified merely because SQLite's page integrity check returns `ok`.
+
+This is **structural validation, not cryptographic authenticity**; tampering with otherwise valid rows still requires independent storage provenance and integrity controls. A failed backup validation leaves no published backup filename. Operators can retain a separately acquired forensic copy for manual recovery review; do not use this verification gate as an automatic repair utility.
