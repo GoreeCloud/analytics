@@ -7,21 +7,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from .storage import Storage
 from .backup import backup_database
+from .purge import _fingerprint
 
 
 def retention_report(storage: Storage, days: int, *, apply: bool = False,
-                     now: datetime | None = None) -> dict:
+                     now: datetime | None = None,
+                     expected_backup_fingerprint: str | None = None) -> dict:
     """Report or prune events older than days, plus orphaned expired visits.
 
     This is an explicit offline operation, NOT a background retention worker.
     """
     if not 1 <= days <= 3650:
         raise ValueError("Retention days must be between 1 and 3650")
+    if apply and not expected_backup_fingerprint:
+        raise ValueError("Apply requires a verified backup content fingerprint")
     when = now or datetime.now(timezone.utc)
     cutoff = (when.astimezone(timezone.utc) - timedelta(days=days)).isoformat(timespec="milliseconds")
     with storage.connect() as db:
@@ -29,6 +35,11 @@ def retention_report(storage: Storage, days: int, *, apply: bool = False,
         # and deletion. No data is deleted by default.
         if apply:
             db.execute("BEGIN IMMEDIATE")
+            # Recheck exact contents after the backup, under the writer lock.
+            # A same-count edit to retained or prunable events must not be
+            # silently discarded with an out-of-date recovery snapshot.
+            if _fingerprint(db) != expected_backup_fingerprint:
+                raise RuntimeError("Database contents changed since retention backup; no pruning done")
         before = db.execute("SELECT COUNT(*) FROM events WHERE ts < ?", (cutoff,)).fetchone()[0]
         sessions = db.execute("SELECT COUNT(*) FROM sessions WHERE last_seen < ? "
                               "AND NOT EXISTS (SELECT 1 FROM events WHERE events.session_id=sessions.id "
@@ -41,6 +52,26 @@ def retention_report(storage: Storage, days: int, *, apply: bool = False,
                        (cutoff,))
     return {"mode": "applied" if apply else "preview", "cutoff_utc": cutoff,
             "events": before, "expired_sessions": sessions}
+
+
+def apply_retention(storage: Storage, days: int, backup_to: str | Path,
+                    *, now: datetime | None = None) -> dict:
+    """Offline retention with exact-content backup precondition.
+
+    Callers must stop concurrent writers. A writer-lock content check also
+    rejects any intervening changes between snapshot and destructive prune.
+    """
+    if not 1 <= days <= 3650:
+        raise ValueError("Retention days must be between 1 and 3650")
+    evidence = backup_database(storage.path, backup_to)
+    backup_path = Path(evidence["destination"]).expanduser().absolute()
+    with closing(sqlite3.connect(backup_path.as_uri() + "?mode=ro",
+                                 uri=True, timeout=10)) as snapshot:
+        snapshot.execute("PRAGMA query_only=ON")
+        expected = _fingerprint(snapshot)
+    result = retention_report(storage, days, apply=True, now=now,
+                              expected_backup_fingerprint=expected)
+    return {**result, "backup": evidence}
 
 
 def main() -> None:
@@ -61,11 +92,12 @@ def main() -> None:
     if args.backup_to and not args.apply:
         p.error("--backup-to is only used with --apply")
     try:
-        evidence = backup_database(args.database, args.backup_to) if args.apply else None
-        report = retention_report(Storage(args.database), args.days, apply=args.apply)
-    except (ValueError, OSError) as exc:
+        storage = Storage(args.database)
+        report = (apply_retention(storage, args.days, args.backup_to) if args.apply
+                  else retention_report(storage, args.days))
+    except (ValueError, OSError, RuntimeError, sqlite3.DatabaseError) as exc:
         p.error(str(exc))
-    print(json.dumps({**report, **({"backup": evidence} if evidence else {})}, indent=2))
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":

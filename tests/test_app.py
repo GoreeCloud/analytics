@@ -195,9 +195,9 @@ def test_oversized_chunked_payload_does_not_require_content_length(client):
     assert response.status_code == 413
 
 
-def test_retention_preview_and_explicit_apply_preserve_recent_visits(client):
+def test_retention_preview_and_explicit_apply_preserve_recent_visits(client, tmp_path):
     from datetime import datetime, timedelta, timezone
-    from analytics.maintenance import retention_report
+    from analytics.maintenance import retention_report, apply_retention
     sid = site(client)
     assert track(client, sid, url="https://example.com/old").status_code == 202
     store = client.app.state.storage
@@ -210,8 +210,9 @@ def test_retention_preview_and_explicit_apply_preserve_recent_visits(client):
     assert prev["mode"] == "preview" and prev["events"] == 1
     assert client.get(f"/api/v1/sites/{sid}/summary?start={old[:10]}&end={old[:10]}",
                       headers=auth(client)).json()["pageviews"] == 1
-    applied = retention_report(store, 90, apply=True, now=now)
+    applied = apply_retention(store, 90, tmp_path / "retention-snapshot.sqlite3", now=now)
     assert applied["events"] == 1 and applied["expired_sessions"] == 1
+    assert applied["backup"]["status"] == "verified"
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
