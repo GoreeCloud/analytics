@@ -25,6 +25,7 @@ from .config import Settings
 from .auth import IdentityVerifier, VerifiedPrincipal
 from .ownership import has_site_permission
 from .origin import valid_serialized_origin
+from .json_guard import unique_json_object
 from .privacy import EVENT_RE, anonymize, normalize_domain, normalized_event, safe_path
 from .storage import Storage
 from .verification import DNSLookupUnavailable, read_txt_records, txt_record_name, txt_record_value
@@ -358,7 +359,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
             data.extend(chunk)
         raw = bytes(data)
         try:
-            payload = json.loads(raw)
+            payload = json.loads(raw, object_pairs_hook=unique_json_object)
         except (ValueError, UnicodeError):
             raise HTTPException(400, "Invalid JSON")
         if not isinstance(payload, dict) or not isinstance(payload.get("site_id"), str):
