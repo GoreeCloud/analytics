@@ -61,3 +61,42 @@ def test_sqlite_sidecar_symlinks_and_nonregular_files_rejected(tmp_path):
         pytest.skip('symlinks unavailable')
     with pytest.raises(ValueError, match='sidecar cannot be a symbolic link'):
         Storage(str(database))
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX file mode required')
+def test_competing_creator_cannot_bypass_owner_only_mode(tmp_path, monkeypatch):
+    from analytics import storage
+    path = tmp_path / 'raced.sqlite3'
+    real_open = storage.os.open
+
+    def competing_open(target, flags, mode=0o777, *args, **kwargs):
+        if str(target) == str(path):
+            path.write_bytes(b'preserve-original-race-winner')
+            path.chmod(0o644)
+            raise FileExistsError('competing creator won O_EXCL')
+        return real_open(target, flags, mode, *args, **kwargs)
+
+    monkeypatch.setattr(storage.os, 'open', competing_open)
+    with pytest.raises(PermissionError, match='owner-only'):
+        Storage(str(path))
+    assert path.read_bytes() == b'preserve-original-race-winner'
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+
+
+def test_competing_creator_symlink_is_rejected(tmp_path, monkeypatch):
+    from analytics import storage
+    source = tmp_path / 'source.sqlite3'
+    Storage(str(source))
+    path = tmp_path / 'raced.sqlite3'
+    real_open = storage.os.open
+
+    def competing_open(target, flags, mode=0o777, *args, **kwargs):
+        if str(target) == str(path):
+            path.symlink_to(source)
+            raise FileExistsError('competing creator won O_EXCL')
+        return real_open(target, flags, mode, *args, **kwargs)
+
+    monkeypatch.setattr(storage.os, 'open', competing_open)
+    with pytest.raises(ValueError, match='symbolic link'):
+        Storage(str(path))
+    assert path.is_symlink() and source.is_file()

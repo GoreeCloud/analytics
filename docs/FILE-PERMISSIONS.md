@@ -18,3 +18,8 @@ The check runs at startup; it is not a continuous filesystem-monitoring guarante
 ## Test evidence
 
 The regression suite covers new `0600` files, rejection of modes `0640`, `0604`, `0644`, `0666`, safe `0600` recovery and nonregular/symlink paths. It never touches a live installation.
+
+
+## Concurrent file creation
+
+SQLite initialization now revalidates any existing database file **after** another process wins exclusive `O_CREAT|O_EXCL` creation. A raced file granting group/other access or a raced symlink is rejected before opening SQLite; the existing file is not automatically replaced or chmodded. This closes the narrow first-open fallback where an O_EXCL race bypassed the initial permissions check. Revalidation is not continuous race prevention, filesystem isolation, or a substitute for controlling who can write the database directory. The container and host must still restrict database-directory ownership and permissions.
