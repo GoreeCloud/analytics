@@ -11,6 +11,7 @@ from contextlib import closing
 import json
 import os
 import sqlite3
+import stat
 import tempfile
 from pathlib import Path
 
@@ -63,10 +64,15 @@ def backup_database(source: str | Path, destination: str | Path) -> dict:
     target = Path(destination).expanduser().absolute()
     if src == target or target.exists() or target.is_symlink():
         raise ValueError("Backup destination must be a new, distinct file")
-    # Require an operator-chosen existing private directory to avoid creating a
-    # world-readable backup tree in an accidental location.
+    # Backups contain visit data and old authorization records. A mode-0600
+    # file inside a public/listable folder still exposes metadata. Refuse
+    # direct symlink redirection or group/other-visible destination folders.
+    if target.parent.is_symlink():
+        raise ValueError("Backup destination directory cannot be a symbolic link")
     if not target.parent.is_dir():
         raise ValueError("Backup destination directory must already exist")
+    if os.name == "posix" and stat.S_IMODE(target.parent.stat().st_mode) & 0o077:
+        raise PermissionError("Backup destination directory must be owner-only (0700)")
     handle, temp_name = tempfile.mkstemp(prefix=".goreecloud-backup-", suffix=".sqlite3",
                                          dir=str(target.parent))
     os.close(handle)  # mkstemp creates mode 0600, including under a liberal umask.

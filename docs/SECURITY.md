@@ -33,14 +33,14 @@
 ## Known open risks and release blockers
 
 - Caller can forge `Origin`, URL, user agent, and public site ID. DNS TXT proof confirms control of one DNS record at verification time, not visitor authenticity, legal ownership or durable control. Resolver cache/trust, DNS poisoning, future domain transfers and the absence of periodic proof checks remain open risks. Collection should not be used for security-sensitive billing/audit claims.
-- Site-wide single admin token is not suitable for organizations; no per-tenant roles, rotation UX, account lockout, or audit trails. The [Identity integration contract](IDENTITY-INTEGRATION.md) specifies the proposed signed-token and independent site-ownership gates; no integration is currently implemented.
+- The default shared administrator token remains a private-development mechanism, not multiuser production authentication. An optional fail-closed Identity-mode HTTP gate now consults independently persisted SQLite v2 site/tenant/subject/action grants, but there is **no live signed-token verifier, OIDC browser BFF, token/session revocation, account lockout or production tenant RBAC**. Repository-specific Identity redistribution rights remain unresolved. See [Identity integration](IDENTITY-INTEGRATION.md) and [Identity API gate](IDENTITY-API-GATE.md).
 - In-process layered rate limits are reset by restart, not shared across workers or replicas, and can be bypassed by distributed traffic. They are not edge DDoS protection.
 - Anonymous rate-limit tables have a 10,000-key in-memory ceiling per limiter; when saturated, new keys are rejected until expired entries can be evicted. This prevents single-minute key-flood memory growth but can temporarily reject legitimate new visitors and is not a substitute for edge traffic controls.
 - Traffic behind a reverse proxy can appear to originate from one proxy IP. Trust proxy forwarded addresses **only** when configured with explicit trusted proxy hosts.
 - Event values may still contain personal data despite the property-key denylist and basic value checks. Add stronger consent/data classification, redaction and deletion controls.
 - Simple path masking cannot guarantee all PII is removed. Privacy review must inspect real representative URLs, logs and properties before enabling third-party traffic.
-- Startup and read-only schema preflight now require the known v1 primary-key definitions, cascade foreign keys and required index columns, and reject existing foreign-key violations. This catches selected structurally unsafe or tampered schemas without automatic repair; it is not a general schema attestation or production corruption-recovery system.
-- SQLite has manual retention preview/pruning, a required validated pre-prune backup, local integrity-verified backup/restore-to-new-path tests, and an explicit, backup-gated offline schema v0-to-v1 migration for recognized legacy layouts. An offline **site-wide** deletion CLI can remove one explicitly confirmed site and related rows after an exclusive verified backup, but **cannot identify individual visitors**. Deletion snapshots retain removed data until their independent lifecycle expires. It lacks a general migration framework, production restore drills, offsite backup management, automated retention, HA and distributed ingestion.
+- Startup and read-only schema preflight now require the known SQLite **v2** owner/permission and event-table keys, cascade foreign keys, required indexes and foreign-key integrity. This catches selected structurally unsafe or tampered schemas without automatic repair; it is not general database attestation or production corruption recovery.
+- SQLite has manual retention preview/pruning, required validated pre-prune backup, integrity-verified backups, and explicit offline backup-gated migration of recognized v0/v1 databases to **v2**, with legacy site ownership left unassigned. A protected, disposable local [recovery drill](RECOVERY-DRILL.md) now verifies that a v2 snapshot can be restored and that all seven current Analytics tables and schema contents match. Site-wide offline deletion remains available only with exact confirmation and a verified backup; it **cannot identify individual visitors**. Snapshots may retain removed data until separately governed expiry. Encrypted offsite backup management, production restore drills, automated retention, HA and distributed ingestion are still unimplemented.
 - The current browser UI is not independently accessibility-audited or screenshot-accepted against full GoreeCloud UI requirements.
 - Dependency lockfile, SBOM and automated vulnerability scanning remain to be added. GitHub Actions are pinned to verified commit SHAs, with persisted checkout credentials disabled; Dependabot opens reviewed dependency-update proposals without automatic merge.
 - Runtime browser-backend integration could not be validated in the current browser sandbox; REST API and mocked UI interactions were tested separately.
@@ -48,7 +48,7 @@
 ## Backup confidentiality and recovery
 
 - The backup CLI uses SQLite online backup API to capture WAL-consistent snapshots from a live database.
-- Snapshot filenames are created exclusively with permission mode 0600, verified with SQLite integrity_check, and never overwritten by commands.
+- Backup snapshot files are created exclusively with mode `0600`, verified with SQLite integrity checks and never overwritten. Backup destinations must be **existing owner-only directories (0700 on POSIX)**, not symlinked paths; incompatible existing directories fail closed and need deliberate operator remediation. This protects directory metadata but does not provide encryption or enforce every parent-directory permission.
 - Recovery writes to a new path; it cannot overwrite a live database or auto-switch the running service.
 - Backups remain sensitive analytics datasets. Encrypt and protect copies, restrict access and retention, and validate restores in the intended environment.
 - Local backup/restore tests do **not** establish an operational disaster-recovery plan.
@@ -60,3 +60,8 @@ Avoid posting credentials, private website data, visitor data or exploit traces 
 ## Launch gate
 
 Do not expose the service's administrator endpoint to the open internet until authentication, isolation, network controls, TLS, backups, retention/deletion policy, end-to-end E2E tests, and deployment acceptance are verified. Do not claim GDPR/CCPA certification from technical features alone.
+
+
+## Development validation update (November 8, 2026)
+
+SQLite first-file creation races are revalidated before opening the database; existing WAL/SHM/journal file permissions are checked at startup. The optional Identity-mode API keeps pending DNS TXT challenges administrator-only and serializes write-permission checks with mutations, while offline revocation compares the complete grant roster. These safeguards remain single-node and are not full filesystem race protection, live token revocation, or production authorization. The local offline recovery drill demonstrates restore-data consistency but not private remote storage or a human-exercised failover plan.
