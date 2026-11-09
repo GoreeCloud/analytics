@@ -11,7 +11,7 @@ from analytics.privacy import normalized_event, safe_path, contains_high_risk_id
 
 
 @pytest.mark.parametrize("value", [
-    "123456789", "123%32%33%34%35%36%37%38%39",
+    "123456789", "1%32%33%34%35%36%37%38%39",
     "4111111111111111", "4111111111111111.0", 
     "0000000000000000", "purchase_4111111111111111",
 ])
