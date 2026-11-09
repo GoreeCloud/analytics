@@ -118,3 +118,40 @@ def test_cli_rejects_unconfirmed_apply(tmp_path):
     assert result.returncode != 0
     assert '--confirm-site-id' in result.stderr
     assert preview_purge(source, 'alpha')['deletion_counts']['events'] == 1
+
+def test_same_count_unrelated_site_change_refuses_purge(tmp_path, monkeypatch):
+    source = populated(tmp_path)
+    from analytics import purge
+    original = purge.backup_database
+    def modify_other_site(*args):
+        evidence = original(*args)
+        with sqlite3.connect(source) as db:
+            db.execute("UPDATE sites SET name=? WHERE id=?", ("mutated-after-backup", "bravo"))
+        return evidence
+    monkeypatch.setattr(purge, "backup_database", modify_other_site)
+    backup = tmp_path / "before.sqlite3"
+    with pytest.raises(RuntimeError, match="contents changed since backup"):
+        apply_purge(source, "alpha", backup, "alpha")
+    assert verify_backup(backup)["sites"] == 2
+    with sqlite3.connect(source) as db:
+        assert db.execute("SELECT name FROM sites WHERE id='bravo'").fetchone()[0] == "mutated-after-backup"
+        assert db.execute("SELECT COUNT(*) FROM sites").fetchone()[0] == 2
+        assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
+
+
+def test_trigger_side_effect_on_other_site_rolls_back_purge(tmp_path):
+    source = populated(tmp_path)
+    with sqlite3.connect(source) as db:
+        db.execute("""
+          CREATE TRIGGER after_alpha_removed AFTER DELETE ON sites
+          WHEN OLD.id='alpha'
+          BEGIN UPDATE sites SET name='unexpected' WHERE id='bravo'; END
+        """)
+    backup = tmp_path / "before.sqlite3"
+    with pytest.raises(RuntimeError, match="Unrelated site records changed"):
+        apply_purge(source, "alpha", backup, "alpha")
+    assert verify_backup(backup)["sites"] == 2
+    with sqlite3.connect(source) as db:
+        assert db.execute("SELECT name FROM sites WHERE id='bravo'").fetchone()[0] == "bravo"
+        assert db.execute("SELECT COUNT(*) FROM sites").fetchone()[0] == 2
+        assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
