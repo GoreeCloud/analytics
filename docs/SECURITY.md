@@ -65,3 +65,21 @@ Do not expose the service's administrator endpoint to the open internet until au
 ## Development validation update (November 8, 2026)
 
 SQLite first-file creation races are revalidated before opening the database; existing WAL/SHM/journal file permissions are checked at startup. The optional Identity-mode API keeps pending DNS TXT challenges administrator-only and serializes write-permission checks with mutations, while offline revocation compares the complete grant roster. These safeguards remain single-node and are not full filesystem race protection, live token revocation, or production authorization. The local offline recovery drill demonstrates restore-data consistency but not private remote storage or a human-exercised failover plan.
+
+
+## Application-layer incoming header admission (development)
+
+The app's ASGI HTTP middleware now returns generic **431** before invoking
+route handlers for more than **64 request header fields**, more than **16 KiB
+total encoded header names/values** (including separator allowance), or any
+single header name/value exceeding **8 KiB**. Existing nosniff, CSP,
+no-cache and frame protections also apply to rejected requests. Tests cover
+high-cardinality, single-field and aggregate-byte refusal paths plus normal
+request recovery.
+
+These are **application-layer** caps on headers already parsed by Uvicorn.
+They are not TCP/HTTP framing or slow-client protections, reverse-proxy
+configuration, TLS authentication, distributed rate limits, or a replacement
+for dedicated Wardveil network-edge limits. Long bearer tokens and requests
+with unusually large cookies may now receive 431 and should be diagnosed
+without weakening the production security boundary.

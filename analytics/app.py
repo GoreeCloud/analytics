@@ -111,7 +111,19 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
-        result = await call_next(request)
+        # ASGI-level admission: reject pathological header sets before token
+        # validation, route handling or any database activity. This is not an
+        # HTTP parser, TLS handshake, slow-client or socket buffer ceiling.
+        raw_headers = request.scope.get("headers") or []
+        too_many = len(raw_headers) > 64
+        too_large = sum(len(name) + len(value) + 4 for name, value in raw_headers) > 16384
+        field_too_large = any(len(name) + len(value) > 8192
+                              for name, value in raw_headers)
+        if too_many or too_large or field_too_large:
+            result = Response("Request headers too large", status_code=431,
+                              media_type="text/plain")
+        else:
+            result = await call_next(request)
         result.headers["X-Content-Type-Options"] = "nosniff"
         result.headers["Referrer-Policy"] = "no-referrer"
         result.headers["X-Frame-Options"] = "DENY"
