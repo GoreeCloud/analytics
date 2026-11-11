@@ -7,7 +7,7 @@ UPSTREAM_BLOB_SHA = "dd9a918eb4239cdd47fb13f383ee3496de459489"
 UPSTREAM_COMMIT = "1c173d64d966b52122ac02eb0ffbd07d2a5a09e4"
 def test_immutable_gc_ui_token_snapshot_and_safe_css():
     body = (STATIC / "gc-ui-tokens.css").read_bytes()
-    actual = hashlib.sha1(b"blob " + str(len(body)).encode("ascii") + b"\\0" + body).hexdigest()
+    actual = hashlib.sha1(b"blob " + str(len(body)).encode("ascii") + b"\0" + body).hexdigest()
     assert actual == UPSTREAM_BLOB_SHA, "GC UI snapshot changed without a reviewed upstream pin"
     content = body.decode("utf-8")
     for role in ("--gc-canvas:", "--gc-surface:", "--gc-text:", "--gc-brand:",
