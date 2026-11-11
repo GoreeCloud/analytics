@@ -117,6 +117,10 @@ def test_web_ui_and_safe_static_assets(client):
     assert client.get("/").status_code == 200
     assert "GoreeCloud" in client.get("/").text
     assert client.get("/assets/tracker.js").status_code == 200
+    token_css = client.get("/assets/gc-ui-tokens.css")
+    assert token_css.status_code == 200
+    assert "--gc-canvas:" in token_css.text
+    assert "text/css" in token_css.headers["content-type"]
     assert client.get("/assets/../../config.py").status_code == 404
     assert client.get("/").headers["x-frame-options"] == "DENY"
 
