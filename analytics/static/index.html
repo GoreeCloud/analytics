@@ -7,21 +7,24 @@
   <meta name="description" content="GoreeCloud Analytics — privacy-first digital intelligence." />
   <title>GoreeCloud Analytics</title>
   <link rel="stylesheet" href="/assets/gc-ui-tokens.css" />
+  <link rel="stylesheet" href="/assets/gc-ui-components.css" />
   <link rel="stylesheet" href="/assets/style.css" />
   <script defer src="/assets/dashboard.js"></script>
+  <script type="module" src="/assets/gc-ui-rail-init.mjs"></script>
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand"><div class="brand-mark" aria-hidden="true">◈</div><div><strong>GoreeCloud</strong><span>Analytics</span></div></div>
-      <div class="nav-heading">WORKSPACE</div>
-      <nav aria-label="Main navigation">
-        <a class="nav-item active" href="#overview" aria-current="location"><span aria-hidden="true">▦</span> Overview</a>
-        <a class="nav-item" href="#audience"><span aria-hidden="true">◎</span> Audience</a>
-        <a class="nav-item" href="#events"><span aria-hidden="true">✧</span> Events</a>
-        <a class="nav-item" href="#setup"><span aria-hidden="true">⚙</span> Tracking setup</a>
+  <div class="shell gc-navigation-shell">
+    <aside class="sidebar gc-navigation-rail" aria-label="Analytics navigation">
+      <div class="brand"><div class="brand-mark" aria-hidden="true">◈</div><div class="gc-navigation-rail__brand-label"><strong>GoreeCloud</strong><span>Analytics</span></div></div>
+      <button type="button" class="gc-navigation-rail__toggle" data-gc-rail-toggle aria-controls="analytics-primary-nav" aria-expanded="true" aria-label="Collapse navigation"><span aria-hidden="true">☰</span><span class="gc-navigation-rail__toggle-label">Navigation</span></button>
+      <div class="nav-heading gc-navigation-rail__secondary">WORKSPACE</div>
+      <nav id="analytics-primary-nav" class="gc-nav gc-navigation-rail__links" aria-label="Main navigation">
+        <a class="nav-item active" href="#overview" aria-current="page"><span class="nav-icon" aria-hidden="true">▦</span><span class="gc-navigation-rail__label">Overview</span></a>
+        <a class="nav-item" href="#audience"><span class="nav-icon" aria-hidden="true">◎</span><span class="gc-navigation-rail__label">Audience</span></a>
+        <a class="nav-item" href="#events"><span class="nav-icon" aria-hidden="true">✧</span><span class="gc-navigation-rail__label">Events</span></a>
+        <a class="nav-item" href="#setup"><span class="nav-icon" aria-hidden="true">⚙</span><span class="gc-navigation-rail__label">Tracking setup</span></a>
       </nav>
-      <div class="sidebar-footer"><span class="privacy-dot" aria-hidden="true"></span> Private by design <small>v0.1.2 • Early release</small></div>
+      <div class="sidebar-footer gc-navigation-rail__secondary"><span class="privacy-dot" aria-hidden="true"></span> Private by design <small>v0.1.2 • Early release</small></div>
     </aside>
     <main id="main-content" class="main">
       <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>Analytics</strong></div><span class="topbar-tag">SELF-HOSTED</span></header>

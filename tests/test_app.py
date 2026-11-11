@@ -120,6 +120,11 @@ def test_web_ui_and_safe_static_assets(client):
     token_css = client.get("/assets/gc-ui-tokens.css")
     assert token_css.status_code == 200
     assert "--gc-canvas:" in token_css.text
+    assert client.get("/assets/gc-ui-components.css").status_code == 200
+    for name in ("gc-ui-navigation-rail.mjs", "gc-ui-rail-init.mjs"):
+        module = client.get("/assets/" + name)
+        assert module.status_code == 200
+        assert "text/javascript" in module.headers["content-type"]
     assert "text/css" in token_css.headers["content-type"]
     assert client.get("/assets/../../config.py").status_code == 404
     assert client.get("/").headers["x-frame-options"] == "DENY"

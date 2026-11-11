@@ -193,9 +193,9 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
 
     @app.get("/assets/{name}", include_in_schema=False)
     def assets(name: str):
-        if name not in ("dashboard.js", "style.css", "tracker.js", "gc-ui-tokens.css"):
+        if name not in ("dashboard.js", "style.css", "tracker.js", "gc-ui-tokens.css", "gc-ui-components.css", "gc-ui-navigation-rail.mjs", "gc-ui-rail-init.mjs"):
             raise HTTPException(404)
-        media = "text/javascript" if name.endswith(".js") else "text/css"
+        media = "text/javascript" if name.endswith((".js", ".mjs")) else "text/css"
         return FileResponse(STATIC / name, media_type=media)
 
     def domain_status(db, site_id: str):
