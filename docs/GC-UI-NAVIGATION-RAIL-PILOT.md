@@ -14,6 +14,11 @@ This pilot builds on the separately staged [GC UI token migration](https://githu
 - The shell's main content occupies the remaining available width, preserving the existing dashboard cards, forms, session-only authentication and private reporting API. Existing unauthorized navigation still fails closed in `dashboard.js`.
 - No new telemetry, location, remote scripts or preference persistence. The feature changes only navigation presentation and local hash selection; it does not grant data access or bypass server authorization.
 
+
+## Bounded physical handset visual smoke — November 11, 2026
+
+The authorized USB-connected **OnePlus N200**, Android 16/API 36, Chrome at native 1080×2400 physical pixels, displayed an unauthenticated, **loopback-only static snapshot** of exact draft source `05f210553f8e3129fff619511cd49ed47df5987b`. The first screenshot showed only **Overview** in the bottom bar because a shared column flex-direction leaked into the inherited phone dock. An experimental local CSS correction exposed all four destinations; a second in-flow correction increased dock height and bottom safe-area padding until **Overview, Audience, Events and Tracking setup** were all readable in the same physical display without clipping. The reviewed CSS corrections were then committed to this PR. No live account, token, Analytics API, provider request or private dashboard data was accessed during the visual smoke. The screenshots remain in a disposable folder on the authorized laptop and have not been published or classified as human visual approval. This is **scoped real-device output**, not tablet/desktop visual acceptance, screen-reader acceptance, verified touch interaction or release sign-off.
+
 ## Verification and release gate
 
 Run the full Analytics Python and Node tests and inspect local HTTP response headers for the bundled styles/modules. Compare before/after actual desktop 1440×900, tablet 820×1180 and phone 390×844 screens in dark/forced-color/reduced-motion and long-label states, including zoom and horizontal overflow. Verify keyboard toggle/focus, hash history, login-blocked destination clicks and VoiceOver/NVDA/Orca/TalkBack announcements on real hardware. A CI pass or a synthetic screenshot is **not** human visual approval. Manual AT and physical-device acceptance stay open and this stacked PR must not deploy by default.
