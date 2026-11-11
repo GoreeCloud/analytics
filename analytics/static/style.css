@@ -52,6 +52,7 @@
   .sidebar .nav-item { min-width:0; }
   .sidebar .gc-navigation-rail__links { padding:0; }
   .sidebar .gc-navigation-rail__links a { display:flex; flex-direction:column; }
+  .sidebar.gc-navigation-rail[data-gc-collapsed="true"] .gc-navigation-rail__links .gc-navigation-rail__label,
   .sidebar .gc-navigation-rail__links .gc-navigation-rail__label {
     position:static;inline-size:auto;block-size:auto;margin:0;padding:0;
     overflow:visible;clip-path:none;white-space:normal;flex:none;text-align:center;
