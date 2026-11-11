@@ -47,10 +47,11 @@
 }
 @media(max-width:600px) {
   .shell.gc-navigation-shell { display:block; }
-  .sidebar.gc-navigation-rail { display:block; overflow-y:visible; }
+  .sidebar.gc-navigation-rail { display:block; overflow-y:visible; height:calc(88px + env(safe-area-inset-bottom,0px)); min-height:88px; padding:8px 10px max(12px,env(safe-area-inset-bottom,0px)); }
   .sidebar .gc-navigation-rail__toggle { display:none; }
-  .sidebar .nav-item { min-width:0; }
-  .sidebar .gc-navigation-rail__links { padding:0; }
+  .main { padding-bottom:calc(100px + env(safe-area-inset-bottom,0px)); }
+  .sidebar .nav-item { flex:1; min-width:0; font-size:11px; line-height:1.25; padding:6px 3px; }
+  .sidebar .gc-navigation-rail__links { display:flex; flex-direction:row; align-items:stretch; justify-content:space-between; block-size:100%; padding:0; }
   .sidebar .gc-navigation-rail__links a { display:flex; flex-direction:column; }
   .sidebar.gc-navigation-rail[data-gc-collapsed="true"] .gc-navigation-rail__links .gc-navigation-rail__label,
   .sidebar .gc-navigation-rail__links .gc-navigation-rail__label {
