@@ -193,7 +193,7 @@ def create_app(settings: Settings | None = None, txt_lookup: Callable[[str], lis
 
     @app.get("/assets/{name}", include_in_schema=False)
     def assets(name: str):
-        if name not in ("dashboard.js", "style.css", "tracker.js"):
+        if name not in ("dashboard.js", "style.css", "tracker.js", "gc-ui-tokens.css"):
             raise HTTPException(404)
         media = "text/javascript" if name.endswith(".js") else "text/css"
         return FileResponse(STATIC / name, media_type=media)
