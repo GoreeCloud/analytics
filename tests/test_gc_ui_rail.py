@@ -35,4 +35,7 @@ def test_dashboard_rail_contract_and_mobile_nav_are_explicit():
     assert "@media (min-width:601px) and (max-width:820px)" in css
     assert "@media(max-width:600px)" in css
     assert '.sidebar .gc-navigation-rail__toggle { display:none; }' in css
+    assert "flex-direction:row; align-items:stretch; justify-content:space-between" in css
+    assert "height:calc(88px + env(safe-area-inset-bottom,0px))" in css
+    assert ".main { padding-bottom:calc(100px + env(safe-area-inset-bottom,0px)); }" in css
     assert 'data-gc-collapsed="true"' in css
